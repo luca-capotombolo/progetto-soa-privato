@@ -3,14 +3,27 @@
 
 #include <linux/types.h>
 
-#define LOG_LEVEL KERN_ALERT
 #define MOD_NAME "File-System-Soa"
 
-#define SOAFS_MAGIC 0xabababab
+#define SOAFS_MAGIC_NUMBER 0xabababab
 #define SOAFS_BLOCK_SIZE 4096
+#define SOAFS_SB_BLOCK_NUMBER 0
+#define DEFAULT_FILE_INODE_BLOCK 1
 
-#define SB_BLOCK_NUMBER 0
+#define SOAFS_MAX_NAME_LEN		16
 
+#define SOAFS_ROOT_INODE_NUMBER 10
+#define SOAFS_FILE_INODE_NUMBER 1
+#define SOAFS_INODE_BLOCK_NUMBER 1
+
+#define SOAFS_UNIQUE_FILE_NAME "the-file"
+
+
+/*
+ * Rappresenta il superblocco mantenuto sul device.
+ * Il superblocco è memorizzato all'interno del primo
+ * blocco del device.
+ */
 struct soafs_super_block {
 	uint64_t version;
 	uint64_t magic;
@@ -21,12 +34,14 @@ struct soafs_super_block {
 };
 
 struct soafs_dir_entry {
-	char filename[FILENAME_MAXLEN];
+	char filename[SOAFS_MAX_NAME_LEN];
 	uint64_t inode_no;
-}
+};
 
 struct soafs_inode {
 	mode_t mode;
+    uid_t uid;
+    gid_t gid;
 	uint64_t inode_no;
 	uint64_t data_block_number;//not exploited
 	union {
@@ -35,11 +50,11 @@ struct soafs_inode {
 	};
 };
 
-struct file_system_type soafs_fs_type = {
-	.owner          = THIS_MODULE,
-    .name           = "soafs",
-    .mount          = soafs_mount,
-    .kill_sb        = soafs_kill_superblock,
-};
+// file.c
+extern const struct inode_operations soafs_inode_ops;
+extern const struct file_operations soafs_file_operations; 
+
+// dir.c
+extern const struct file_operations soafs_dir_operations;
 
 #endif /* _SOAFS_H */
