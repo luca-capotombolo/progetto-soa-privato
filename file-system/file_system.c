@@ -30,7 +30,7 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     /* Imposto la dimensione del superblocco pari a 4KB. */
     if(sb_set_blocksize(sb, SOAFS_BLOCK_SIZE) == 0)
     {
-        printk("%s: Errore nel setup della dimensione del superblocco.", MOD_NAME);
+        printk("%s: Errore nel setup della dimensione del superblocco.\n", MOD_NAME);
         return -EIO;
     }
    
@@ -42,7 +42,7 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     bh = sb_bread(sb, SOAFS_SB_BLOCK_NUMBER);
 
     if(bh == NULL){
-        printk("%s: Errore nella lettura del superblocco.", MOD_NAME);
+        printk("%s: Errore nella lettura del superblocco.\n", MOD_NAME);
 	    return -EIO;
     }
 
@@ -51,7 +51,7 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
 
     /* Verifico il valore del magic number presente nel superblocco su device. */
     if(sb_disk->magic != SOAFS_MAGIC_NUMBER){
-        printk("%s: Mancata corrispondenza tra i due magic number.", MOD_NAME);
+        printk("%s: Mancata corrispondenza tra i due magic number.\n", MOD_NAME);
         /* Rilascio il buffer cache che mantiene il superblocco. */
         brelse(bh);
 	    return -EBADF;
@@ -78,7 +78,7 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
 
     if(!root_inode)
     {
-        printk("%s: Errore nel recupero del root inode.", MOD_NAME);
+        printk("%s: Errore nel recupero del root inode.\n", MOD_NAME);
         brelse(bh);
         return -ENOMEM;
     }
@@ -104,7 +104,7 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
 
     if (!root_dentry)
     {
-        printk("%s: Errore nella creazione della root directory.", MOD_NAME);
+        printk("%s: Errore nella creazione della root directory.\n", MOD_NAME);
         brelse(bh);
         return -ENOMEM;
     }
@@ -124,7 +124,7 @@ static void soafs_kill_sb(struct super_block *sb)
 {
     kill_block_super(sb);
 
-    printk("%s: Il File System 'soafs' è stato smontato con successo.", MOD_NAME);
+    printk("%s: Il File System 'soafs' è stato smontato con successo.\n", MOD_NAME);
 
 }
 
@@ -137,11 +137,11 @@ static struct dentry *soafs_mount(struct file_system_type *fs_type, int flags, c
 
     if (unlikely(IS_ERR(ret)))
     {
-        printk("%s: Errore durante il montaggio del File System 'soafs'.",MOD_NAME);
+        printk("%s: Errore durante il montaggio del File System 'soafs'.\n",MOD_NAME);
     }
     else
     {
-        printk("%s: Montaggio del File System 'soafs' sul device %s avvenuto con successo.",MOD_NAME,dev_name);
+        printk("%s: Montaggio del File System 'soafs' sul device %s avvenuto con successo.\n",MOD_NAME,dev_name);
     }
 
     return ret;
@@ -167,7 +167,7 @@ static int soafs_init(void)
     }    
     else
     {
-        printk("%s: Errore nella registrazione del File System 'soafs'. - Errore: %d", MOD_NAME,ret);
+        printk("%s: Errore nella registrazione del File System 'soafs'. - Errore: %d\n", MOD_NAME,ret);
     }
 
     return ret;
@@ -186,7 +186,7 @@ static void soafs_exit(void)
     }
     else
     {
-        printk("%s: Errore nella rimozione della tipologia di File System 'soafs' - Errore: %d", MOD_NAME, ret);
+        printk("%s: Errore nella rimozione della tipologia di File System 'soafs' - Errore: %d\n", MOD_NAME, ret);
     }
 
 }

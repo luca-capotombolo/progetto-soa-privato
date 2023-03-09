@@ -1,0 +1,8 @@
+*.o
+full_file_system.ko
+full_file_system.mod.c
+full_file_system.mod.o
+full_file_system.mod
+Module.symvers
+modules.order
+singlefilemakefs
