@@ -1,8 +1,7 @@
 #include <linux/fs.h>
-#include <linux/buffer_head.h>
 #include <linux/string.h>
 
-#include "./header/file_system.h"
+#include "../headers/main_header.h"
 
 /*
  * Questa funzione itera sulle entry di una directory (i.e., elenca il contenuto della directory).

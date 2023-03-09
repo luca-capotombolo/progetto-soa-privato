@@ -1,23 +1,25 @@
-#include <linux/init.h>
-#include <linux/module.h>
-#include <linux/fs.h>
+#include <linux/fs.h> /* sb_set_blocksize()-iget_locked()-inode_init_owner()-unlock_new_inode()-kill_block_super()-mount_bdev() */
 #include <linux/timekeeping.h>
-#include <linux/time.h>
-#include <linux/buffer_head.h>
+#include <linux/time.h>/* ktime_get_real_ts64() */
+#include <linux/buffer_head.h>/* sb_bread()-brelse() */
+#include <linux/dcache.h>/* d_make_root() */
+#include "../headers/main_header.h"
 
-#include "./header/file_system.h"
 
-MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Luca Capotombolo <capoluca99@gmail.com>");
-MODULE_DESCRIPTION("FILE-SYSTEM-SOA");
 
 static struct super_operations soafs_super_ops = {
 
 };
 
+
+
+
 static struct dentry_operations soafs_dentry_ops = {
 
 };
+
+
+
 
 static int soafs_fill_super(struct super_block *sb, void *data, int silent) {   
 
@@ -120,6 +122,8 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     return 0;
 }
 
+
+
 static void soafs_kill_sb(struct super_block *sb)
 {
     kill_block_super(sb);
@@ -127,6 +131,8 @@ static void soafs_kill_sb(struct super_block *sb)
     printk("%s: Il File System 'soafs' è stato smontato con successo.\n", MOD_NAME);
 
 }
+
+
 
 static struct dentry *soafs_mount(struct file_system_type *fs_type, int flags, const char *dev_name, void *data)
 {
@@ -147,49 +153,17 @@ static struct dentry *soafs_mount(struct file_system_type *fs_type, int flags, c
     return ret;
 }
 
-static struct file_system_type soafs_fs_type = {
+
+
+/*
+ * Descrizione della tipologia di File System
+ * memorizzato all'interno del dispositivo a blocchi.
+ */
+struct file_system_type soafs_fs_type = {
 	.owner          = THIS_MODULE,
     .name           = "soafs",
     .mount          = soafs_mount,
     .kill_sb        = soafs_kill_sb,
 };
 
-static int soafs_init(void)
-{
 
-    int ret;
-
-    ret = register_filesystem(&soafs_fs_type);
-
-    if (likely(ret == 0))
-    {
-        printk("%s: File System 'soafs' registrato correttamente.\n",MOD_NAME);
-    }    
-    else
-    {
-        printk("%s: Errore nella registrazione del File System 'soafs'. - Errore: %d\n", MOD_NAME,ret);
-    }
-
-    return ret;
-}
-
-static void soafs_exit(void)
-{
-
-    int ret;
-
-    ret = unregister_filesystem(&soafs_fs_type);
-
-    if (likely(ret == 0))
-    {
-        printk("%s: Rimozione della tipologia di File System 'soafs' avvenuta con successo.\n",MOD_NAME);
-    }
-    else
-    {
-        printk("%s: Errore nella rimozione della tipologia di File System 'soafs' - Errore: %d\n", MOD_NAME, ret);
-    }
-
-}
-
-module_init(soafs_init);
-module_exit(soafs_exit);

@@ -1,18 +1,17 @@
-#define EXPORT_SYMTAB
+#include <linux/init.h>
 #include <linux/module.h>
-#include <linux/kernel.h>
+#include <linux/kernel.h>	/* Needed for KERN_INFO */
+#include <linux/fs.h>
 #include <linux/version.h>
 #include <linux/syscalls.h>
 #include "lib/include/scth.h"
 
+#include "./headers/main_header.h"
 
-MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Luca Capotombolo <capoluca99@gmail.com>");
+MODULE_LICENSE(LICENSE);
+MODULE_AUTHOR(AUTHOR);
+MODULE_DESCRIPTION(DESCRIPTION);
 
-
-#define MODNAME "SOA_SYSTEM_CALLS"
-#define HACKED_ENTRIES (int)(sizeof(new_sys_call_array)/sizeof(unsigned long))
-#define AUDIT if(1)
 
 
 unsigned long the_syscall_table = 0x0;
@@ -29,7 +28,7 @@ asmlinkage int sys_get_data(unsigned long vaddr){
 #endif
 
     //TODO: Implementa la system call
-    printk("%s: Invocato la get_data.\n", MODNAME);
+    printk("%s: Invocato la get_data.\n", MOD_NAME);
     return 0;
 	
 }
@@ -42,7 +41,7 @@ asmlinkage int sys_put_data(unsigned long vaddr){
 #endif
 
     //TODO: Implementa la system call
-    printk("%s: Invocato la put_data.\n", MODNAME);
+    printk("%s: Invocato la put_data.\n", MOD_NAME);
     return 0;
 	
 }
@@ -55,7 +54,7 @@ asmlinkage int sys_invalidate_data(unsigned long vaddr){
 #endif
 
     //TODO: Implementa la system call
-    printk("%s: Invocato la invalidate_data.\n", MODNAME);
+    printk("%s: Invocato la invalidate_data.\n", MOD_NAME);
     return 0;
 	
 }
@@ -69,16 +68,17 @@ long sys_invalidate_data = (unsigned long) __x64_sys_invalidate_data;
 #endif
 
 
-int init_module(void)
+static int soafs_init(void)
 {
 
-    int i;
     int ret;
+    int i;
+
 
 	AUDIT
     {
-        printk("%s: received sys_call_table address %px\n",MODNAME,(void*)the_syscall_table);
-     	printk("%s: initializing - hacked entries %d\n",MODNAME,HACKED_ENTRIES);
+        printk("%s: received sys_call_table address %px\n",MOD_NAME,(void*)the_syscall_table);
+     	printk("%s: initializing - hacked entries %d\n",MOD_NAME,HACKED_ENTRIES);
 	}
 
 	new_sys_call_array[0] = (unsigned long)sys_get_data;
@@ -89,7 +89,7 @@ int init_module(void)
 
     if (ret != HACKED_ENTRIES)
     {
-        printk("%s: could not hack %d entries (just %d)\n",MODNAME,HACKED_ENTRIES,ret); 
+        printk("%s: could not hack %d entries (just %d)\n",MOD_NAME,HACKED_ENTRIES,ret); 
         return -1;      
     }
 
@@ -102,18 +102,28 @@ int init_module(void)
 
 	protect_memory();
 
-    printk("%s: all new system-calls correctly installed on sys-call table\n",MODNAME);
+    printk("%s: all new system-calls correctly installed on sys-call table\n",MOD_NAME);
 
-    return 0;
+    ret = register_filesystem(&soafs_fs_type);
 
+    if (likely(ret == 0))
+    {
+        printk("%s: File System 'soafs' registrato correttamente.\n",MOD_NAME);
+    }    
+    else
+    {
+        printk("%s: Errore nella registrazione del File System 'soafs'. - Errore: %d\n", MOD_NAME,ret);
+    }
+
+    return ret;
 }
 
-void cleanup_module(void)
+static void soafs_exit(void)
 {
-
+    int ret;
     int i;
                 
-    printk("%s: shutting down\n",MODNAME);
+    printk("%s: shutting down\n",MOD_NAME);
 
 	unprotect_memory();
 
@@ -124,6 +134,20 @@ void cleanup_module(void)
 
 	protect_memory();
 
-    printk("%s: sys-call table restored to its original content\n",MODNAME);
-        
+    printk("%s: sys-call table restored to its original content\n",MOD_NAME);
+
+    ret = unregister_filesystem(&soafs_fs_type);
+
+    if (likely(ret == 0))
+    {
+        printk("%s: Rimozione della tipologia di File System 'soafs' avvenuta con successo.\n",MOD_NAME);
+    }
+    else
+    {
+        printk("%s: Errore nella rimozione della tipologia di File System 'soafs' - Errore: %d\n", MOD_NAME, ret);
+    }
+
 }
+
+module_init(soafs_init);
+module_exit(soafs_exit);

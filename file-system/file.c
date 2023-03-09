@@ -2,11 +2,12 @@
 #include <linux/buffer_head.h>
 #include <linux/string.h>
 
-#include "./header/file_system.h"
+#include "../headers/main_header.h"
 
 
 ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t * off) {
 
+    //TODO: da implementare
     printk("%s: E' stata invocata la funzione di lettura.", MOD_NAME);
     return 1;
 

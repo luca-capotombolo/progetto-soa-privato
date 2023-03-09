@@ -72,6 +72,6 @@ extern const struct file_operations soafs_file_operations;
 // dir.c
 extern const struct file_operations soafs_dir_operations;
 //file_system.c
-struct file_system_type soafs_fs_type;
+extern struct file_system_type soafs_fs_type;
 
 #endif /* _FILE_SYSTEM_H */
