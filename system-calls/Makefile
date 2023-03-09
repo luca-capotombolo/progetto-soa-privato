@@ -11,3 +11,6 @@ clean:
 
 mount:
 	insmod the_system_calls.ko the_syscall_table=$(A)
+
+umount:
+	sudo rmmod the_system_calls

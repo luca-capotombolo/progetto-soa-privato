@@ -28,9 +28,8 @@ struct soafs_super_block {
 	uint64_t version;
 	uint64_t magic;
 	uint64_t block_size;
-	uint64_t inodes_count;//not exploited
-	uint64_t free_blocks;//not exploited
-	char padding[SOAFS_BLOCK_SIZE - (5 * sizeof(uint64_t))];  
+    uint64_t num_block;
+	char padding[SOAFS_BLOCK_SIZE - (4 * sizeof(uint64_t))];  
 };
 
 struct soafs_dir_entry {

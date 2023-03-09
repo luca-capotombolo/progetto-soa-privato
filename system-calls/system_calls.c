@@ -1,44 +1,26 @@
 #define EXPORT_SYMTAB
 #include <linux/module.h>
 #include <linux/kernel.h>
-#include <linux/fs.h>
-#include <linux/cdev.h>
-#include <linux/errno.h>
-#include <linux/device.h>
-#include <linux/kprobes.h>
-#include <linux/mutex.h>
-#include <linux/mm.h>
-#include <linux/sched.h>
-#include <linux/slab.h>
 #include <linux/version.h>
-#include <linux/interrupt.h>
-#include <linux/time.h>
-#include <linux/string.h>
-#include <linux/vmalloc.h>
-#include <asm/page.h>
-#include <asm/cacheflush.h>
-#include <asm/apic.h>
-#include <asm/io.h>
 #include <linux/syscalls.h>
 #include "lib/include/scth.h"
 
-#define MODNAME "SOA_SYSTEM_CALLS"
-#define HACKED_ENTRIES (int)(sizeof(new_sys_call_array)/sizeof(unsigned long))
-#define AUDIT if(1)
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Luca Capotombolo <capoluca99@gmail.com>");
 
 
+#define MODNAME "SOA_SYSTEM_CALLS"
+#define HACKED_ENTRIES (int)(sizeof(new_sys_call_array)/sizeof(unsigned long))
+#define AUDIT if(1)
+
+
 unsigned long the_syscall_table = 0x0;
-
 module_param(the_syscall_table, ulong, 0660);
-
 unsigned long the_ni_syscall;
-
 unsigned long new_sys_call_array[] = {0x0, 0x0, 0x0};
-
 int restore[HACKED_ENTRIES] = {[0 ... (HACKED_ENTRIES-1)] -1};
+
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
 __SYSCALL_DEFINEx(1, _get_data, unsigned long, vaddr){
@@ -52,6 +34,7 @@ asmlinkage int sys_get_data(unsigned long vaddr){
 	
 }
 
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
 __SYSCALL_DEFINEx(1, _put_data, unsigned long, vaddr){
 #else
@@ -63,6 +46,7 @@ asmlinkage int sys_put_data(unsigned long vaddr){
     return 0;
 	
 }
+
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
 __SYSCALL_DEFINEx(1, _invalidate_data, unsigned long, vaddr){

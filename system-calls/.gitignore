@@ -5,3 +5,4 @@ the_system_calls.mod.o
 the_system_calls.mod
 Module.symvers
 modules.order
+user/
