@@ -11,7 +11,7 @@
  */
 static int soafs_iterate(struct file *file, struct dir_context* ctx) {
 
-    printk("%s: E' stata invocata la iterate.", MOD_NAME);
+    //printk("%s: E' stata invocata la iterate.", MOD_NAME);
 	
     /* Non possiamo restituire più di '.', '..' e l'unico file. */
 	if(ctx->pos >= (2 + 1))

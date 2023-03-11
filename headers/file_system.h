@@ -25,6 +25,10 @@
 #define SOAFS_INODE_BLOCK_NUMBER 1
 /* Nome dell'unico file */
 #define SOAFS_UNIQUE_FILE_NAME "the-file"
+/* Numero massimo di blocchi supportato dal device */
+#define NBLOCKS 4
+/* Versione del File System */
+#define VERSION 1
 
 
 
@@ -54,8 +58,8 @@ struct soafs_dir_entry {
 /* inode */
 struct soafs_inode {
 	mode_t mode;
-    uid_t uid;
-    gid_t gid;
+    uid_t uid;      //Non ancora utilizzato nella formattazione.
+    gid_t gid;      //Non ancora utilizzato nella formattazione.
 	uint64_t inode_no;
 	uint64_t data_block_number;//not exploited
 	union {

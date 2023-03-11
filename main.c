@@ -27,8 +27,14 @@ __SYSCALL_DEFINEx(1, _get_data, unsigned long, vaddr){
 asmlinkage int sys_get_data(unsigned long vaddr){
 #endif
 
+    //struct file *filp = NULL;
+
     //TODO: Implementa la system call
     printk("%s: Invocato la get_data.\n", MOD_NAME);
+
+    //filp = filp_open()
+
+    
     return 0;
 	
 }

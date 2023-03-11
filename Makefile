@@ -4,26 +4,28 @@ my_module-objs += main.o ./file-system/file.o ./file-system/dir.o ./file-system/
 A = $(shell cat /sys/module/the_usctm/parameters/sys_call_table_address)
 
 all:
-	# gcc singlefilemakefs.c -o singlefilemakefs
+	gcc ./file-system/singlefilemakefs.c -o ./file-system/singlefilemakefs
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
 
 clean:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
+	rm ./file-system/singlefilemakefs
+	rm ./file-system/image
 
 create-fs:
-	dd bs=4096 count=100 if=/dev/zero of=image
-	./singlefilemakefs image
+	dd bs=4096 count=100 if=/dev/zero of=./file-system/image
+	./file-system/singlefilemakefs ./file-system/image 4
 
 mount-module:
 	insmod my_module.ko the_syscall_table=$(A)
 
 mount-fs:
-	mkdir mount
-	sudo mount -o loop -t soafs image ./mount/
+	mkdir ./file-system/mount
+	sudo mount -o loop -t soafs ./file-system/image ./file-system/mount/
 
 umount-fs:
-	sudo umount ./mount/
-	rm -d ./mount
+	sudo umount ./file-system/mount/
+	rm -d ./file-system/mount/
 
 umount-module:
 	sudo rmmod my_module
