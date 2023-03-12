@@ -1,6 +1,7 @@
 obj-m += my_module.o
 my_module-objs += main.o ./file-system/file.o ./file-system/dir.o ./file-system/file_system.o lib/scth.o
 
+
 A = $(shell cat /sys/module/the_usctm/parameters/sys_call_table_address)
 
 all:
@@ -21,7 +22,7 @@ mount-module:
 
 mount-fs:
 	mkdir ./file-system/mount
-	sudo mount -o loop -t soafs ./file-system/image ./file-system/mount/
+	sudo mount -o loop,"./file-system/mount/" -t soafs ./file-system/image ./file-system/mount/
 
 umount-fs:
 	sudo umount ./file-system/mount/

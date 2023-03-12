@@ -3,6 +3,7 @@
 #include <linux/time.h>/* ktime_get_real_ts64() */
 #include <linux/buffer_head.h>/* sb_bread()-brelse() */
 #include <linux/dcache.h>/* d_make_root() */
+#include <linux/string.h> /* strlen() */
 #include "../headers/main_header.h"
 
 
@@ -13,12 +14,14 @@ static struct super_operations soafs_super_ops = {
 
 
 
-
 static struct dentry_operations soafs_dentry_ops = {
 
 };
 
 
+/* Inizialmente non ho alcun montaggio */
+int is_mounted = 0;
+char *mount_path = NULL;
 
 
 static int soafs_fill_super(struct super_block *sb, void *data, int silent) {   
@@ -28,6 +31,7 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     struct soafs_super_block *sb_disk;
     struct timespec64 curr_time;
     struct buffer_head *bh;
+
     
     /* Imposto la dimensione del superblocco pari a 4KB. */
     if(sb_set_blocksize(sb, SOAFS_BLOCK_SIZE) == 0)
@@ -67,7 +71,6 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     sb->s_fs_info = NULL;
 
     //TODO: Decommenta il codice se si necessita di dati specifici del superblocco del FS.
-
     /* sbi = kzalloc(sizeof(struct minfs_sb_info), GFP_KERNEL);
 	if (!sbi)
     {
@@ -88,9 +91,7 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     root_inode->i_ino = SOAFS_ROOT_INODE_NUMBER;
     inode_init_owner(&init_user_ns, root_inode, NULL, S_IFDIR);
     root_inode->i_sb = sb;
-
     root_inode->i_mode = S_IFDIR | S_IRUSR | S_IRGRP | S_IROTH | S_IWUSR | S_IWGRP | S_IXUSR | S_IXGRP | S_IXOTH;
-
     ktime_get_real_ts64(&curr_time);
     root_inode->i_atime = root_inode->i_mtime = root_inode->i_ctime = curr_time;
 
@@ -112,7 +113,6 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     }
 
     sb->s_root = root_dentry;
-
     sb->s_root->d_op = &soafs_dentry_ops;
 
     unlock_new_inode(root_inode);
@@ -126,9 +126,13 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
 
 static void soafs_kill_sb(struct super_block *sb)
 {
+
     kill_block_super(sb);
 
     printk("%s: Il File System 'soafs' è stato smontato con successo.\n", MOD_NAME);
+
+    /* Registro il fatto che il file system è stato smontato. */
+    is_mounted = 0;
 
 }
 
@@ -138,17 +142,32 @@ static struct dentry *soafs_mount(struct file_system_type *fs_type, int flags, c
 {
     struct dentry *ret;
 
+    if(mount_path != NULL)
+    {
+        printk("%s: Esiste già un altro montaggio del file system di tipo %s\n", MOD_NAME, fs_type->name);
+        return ERR_PTR(-EINVAL);
+    }
+    
     /* Monta un file system memorizzato su un block device */
     ret = mount_bdev(fs_type, flags, dev_name, data, soafs_fill_super);
 
     if (unlikely(IS_ERR(ret)))
     {
         printk("%s: Errore durante il montaggio del File System 'soafs'.\n",MOD_NAME);
+        is_mounted = 0;
     }
     else
     {
         printk("%s: Montaggio del File System 'soafs' sul device %s avvenuto con successo.\n",MOD_NAME,dev_name);
+        /* Registro il fatto che il file system è stato montato. */
+        is_mounted = 1;
     }
+
+    printk("%s: provo con il valore data %s\n", MOD_NAME, (char *)data);
+
+    mount_path = (char *)data;
+
+    printk("%s: Lunghezza stringa data %ld\n", MOD_NAME, strlen(mount_path));
 
     return ret;
 }

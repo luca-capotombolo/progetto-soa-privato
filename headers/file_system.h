@@ -1,10 +1,11 @@
+//file_system.h
+
 #ifndef _FILE_SYSTEM_H
 #define _FILE_SYSTEM_H
 
 
 
 #include <linux/types.h>/* uint64_t */
-
 
 
 /* Magic Number */
@@ -69,7 +70,9 @@ struct soafs_inode {
 };
 
 
-
+//file_system.c
+extern int is_mounted;
+extern char *mount_path;
 // file.c
 extern const struct inode_operations soafs_inode_ops;
 extern const struct file_operations soafs_file_operations; 
