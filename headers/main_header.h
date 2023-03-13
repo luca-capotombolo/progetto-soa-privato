@@ -30,9 +30,13 @@
 #define LOG_DEV_ERR(system_call)                                                                                \
     printk("%s: [%s] il device su cui operare non è stato montato.\n", MOD_NAME, system_call)
 
-/* Errore DEVICE system call */
+/* BUFFER CACHE */
 #define LOG_BH(system_call, operazione, offset, esito)                                                            \
     printk("%s: [%s] %s nella %s del blocco con indice %d\n", MOD_NAME, system_call, esito, operazione, offset)
+
+/* Errore KMALLOC */
+#define LOG_KMALLOC_ERR(system_call)                                                            \
+    printk("%s: [%s] si è verificato un errore nell'allocazione della memoria con la kmalloc()\n", MOD_NAME, system_call)
                                                 
 
 #endif

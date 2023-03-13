@@ -30,10 +30,11 @@ static int check_offset(int offset)
 {
     /*
      * Tengo conto dei primi due blocchi, contenenti rispettivamente
-     * il superblocco e l'indice del file, e del fatto che il primo
-     * blocco ha indice pari a 0 (e non 1).
+     * il superblocco e l'inode del file, e del fatto che il primo
+     * blocco ha indice pari a 0 (e non 1) e quindi l'offset può assumere
+     * valore 0.
      */
-    if( (offset + 2 > NBLOCKS - 1) || (offset < 0) )
+    if( ((offset + 2) > (NBLOCKS - 1)) || (offset < 0) )
     {
         return 1;
     }
@@ -56,9 +57,23 @@ static int check_size(size_t size)
 
 
 
+/*
+ * Computa il numero di byte all'interno di un
+ * blocco del device che sono riservati per
+ * mantenere il messaggio utente. Gli eventuali
+ * altri bytes vengono utilizzati per mantenere i
+ * metadati.
+ */
 static int get_available_data(void)
 {
     return SOAFS_BLOCK_SIZE - METADATA;
+}
+
+
+
+static int get_metadata(void)
+{
+    return METADATA;
 }
 
 
@@ -69,14 +84,14 @@ __SYSCALL_DEFINEx(3, _get_data, int, offset, char *, destination, size_t, size){
 asmlinkage int sys_get_data(int offset, char * destination, size_t size){
 #endif
 
+    struct buffer_head *bh = NULL;
     int ret;
     int real_offset;
     int str_len;
     int available_data;
-    size_t byte_copy;
     size_t byte_ret;
+    size_t byte_copy;                                           /* Il numero di byte che verranno restituiti all'utente */
     char *msg_block;                                            /* Il messaggio contenuto all'interno del blocco del device */   
-    struct buffer_head *bh = NULL;
     
     LOG_SYSTEM_CALL("get_data");
     
@@ -94,27 +109,29 @@ asmlinkage int sys_get_data(int offset, char * destination, size_t size){
         return -EINVAL;
     }
 
-    real_offset = offset + 2;                                   /* Non considero i blocchi 1 e 2 rispettivamente del superblocco e dell'inode */
+    real_offset = offset + 2;                                   /* Non considero i blocchi 1 e 2 che contengono rispettivamente il superblocco e l'inode */
 
     bh = sb_bread(sb_global, real_offset);          /* Utilizziamo il buffer cache per caricare il blocco 'offset' richiesto */                      
 
     if(bh == NULL)
     {
-        LOG_BH("get_data", "lettura", offset, "errore");
+        LOG_BH("get_data", "lettura", real_offset, "errore");
         return -EIO;
     }
 
-    LOG_BH("get_data", "lettura", offset, "successo");
+    LOG_BH("get_data", "lettura", real_offset, "successo");
 
-    msg_block = (char *)bh->b_data;                 /* Prendo il messaggio contenuto nel blocco */
+    msg_block = (char *)bh->b_data;                 /* Prendo il riferimento al messaggio contenuto nel blocco portato in memoria */
 
-    brelse(bh);                                     /* Rilascio del buffer cache */
+    //TODO: gestisce gli eventuali metadati.
+
+    msg_block = msg_block + get_metadata();
 
     str_len = strlen(msg_block);                    /* Non tiene conto del terminatore di stringa */
 
     printk("%s: il messaggio letto dal blocco del device è '%s' ed ha una dimensione di %d\n", MOD_NAME, msg_block, str_len);
 
-    available_data = get_available_data();
+    available_data = get_available_data();          /* La dimensione massima del messsaggio che può essere mantenuto nei blocchi del device */
 
     if(size > available_data)
     {
@@ -133,41 +150,52 @@ asmlinkage int sys_get_data(int offset, char * destination, size_t size){
          * Altrimenti, ti restituisco la quantità di byte che
          * mi chiedi. Metto il terminatore di stringa poiché
          * il messaggio contenuto nel blocco potrebbe essere
-         * più lungo della dimensione 'size' richiesta.
+         * più lungo della dimensione 'size' richiesta. Sono
+         * le mie system call che si fanno carico della gestione
+         * corretta del terminatore di stringa.
          */
         byte_copy = size;
-        msg_block[byte_copy-1] = '\0';
-    }
+
+        /*
+         * Se possibile, cerco di evitare l'operazione di scrittura.
+         * Per come vengono scritti i messaggi all'interno del blocco,
+         * il terminatore di stringa è già presente.
+         */
+        if(size < available_data)
+        {
+            msg_block[byte_copy-1] = '\0';
+        }
+      
+    }    
+
+    printk("Numero di bytes che verranno effettivamente restituiti è %ld\n", byte_copy);
     
     byte_ret = copy_to_user(destination, msg_block, byte_copy);
+
+    brelse(bh);                                     /* Rilascio del buffer cache */
     
-    return 0;
+    return (byte_copy - byte_ret);
 	
 }
 
 
 
-//TODO: Implementa la system call
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
 __SYSCALL_DEFINEx(2, _put_data, char *, source, size_t, size){
 #else
 asmlinkage int sys_put_data(char * source, size_t size){
 #endif
 
+    struct buffer_head *bh = NULL;
+    int available_data;
+    char *msg_block;
     int ret;    
-    char *msg;                      /* Il messaggio che si richiede di scrivere nel buffer */
-    size_t msg_size;                /* La dimensione del messaggio che verrà scritto nel buffer */    
+    char *msg;                      /* Il messaggio che si richiede di scrivere nel blocco */
+    size_t msg_size;                /* La dimensione del messaggio che verrà scritto nel blocco */    
     size_t bytes_to_copy;           /* Il numero di bytes che verranno effettivamente copiati dallo spazio utente */    
     unsigned long bytes_ret;        /* Il numero di bytes effettivamente copiati */
-    int available_data;
 
     LOG_SYSTEM_CALL("put_data");
-
-    if(size <= 0)
-    {
-        LOG_PARAM_ERR("put_data");
-        return -EINVAL;
-    }
 
     ret = check_is_mounted();   /* verifico se il file system su cui si deve operare è stato effettivamente montato */
 
@@ -177,23 +205,26 @@ asmlinkage int sys_put_data(char * source, size_t size){
         return -ENODEV;
     }
 
-    available_data = get_available_data();
+    if( check_size(size) )
+    {
+        LOG_PARAM_ERR("get_data");
+        return -EINVAL;
+    }
+
+    available_data = get_available_data();        /* La dimensione massima del messsaggio che può essere mantenuto nei blocchi del device */
 
     if(size > available_data)
     {
         /*
          * Si sta chiedendo di scrivere un messaggio
-         * che ha la dimensione maggiore di un blocco.
-         * Il messaggio verrà scritto parzialmente.
-         * Più precisamente, verrà scritto un numero di
-         * bytes pari a (SOAFS_BLOCK_SIZE - METADATA).
-         * La componente '-1' della variabile bytes_to_copy
-         * è dovuta al fatto che bisogna tener conto del
-         * terminatore di stringa '\0'.
+         * che ha la dimensione maggiore della dimensione
+         * massima per un messaggio che viene scritto nel
+         * device. Di conseguenza, il messaggio verrà scritto
+         * parzialmente. La componente '-1' della variabile
+         * 'bytes_to_copy' è dovuta al fatto che bisogna
+         * tener conto del terminatore di stringa '\0'.
          */
-
         msg_size = available_data;
-
         bytes_to_copy = msg_size - 1;   
      
     }
@@ -202,13 +233,8 @@ asmlinkage int sys_put_data(char * source, size_t size){
         /*
          * Si assume che la stringa passata in input
          * contenga già il terminatore di stringa '\0'.
-         * A questo punto, si sta chiedendo di scrivere
-         * un messaggio che può essere scritto in termini
-         * di dimensione all'interno del blocco del device.
          */
-
         msg_size = size;
-
         bytes_to_copy = msg_size;
 
     }
@@ -218,8 +244,7 @@ asmlinkage int sys_put_data(char * source, size_t size){
 
     if(msg == NULL)
     {
-        printk("%s: errore nell'allocazione della memoria con la kmalloc()\n", MOD_NAME);
-
+        LOG_KMALLOC_ERR("put_data");
         return -EIO;    
     }
 
@@ -229,14 +254,33 @@ asmlinkage int sys_put_data(char * source, size_t size){
 
     if(bytes_to_copy!=msg_size)
     {
-        msg[msg_size] = '\0';                           /* Inserisco il terminatore di stringa */
+        msg[msg_size - 1] = '\0';                           /* Inserisco il terminatore di stringa */
     }
 
     printk("%s: E' stato richiesto di scrivere il messaggio '%s'\n", MOD_NAME, msg);
 
     printk("%s: Il file system su cui si sta lavorando è di tipo %s\n", MOD_NAME, sb_global->s_type->name);
 
-    return size - bytes_ret;
+    //TODO: determina, se esiste, un blocco libero per la scrittura del messaggio
+    bh = sb_bread(sb_global, 2);                            
+
+    if(bh == NULL)
+    {
+        LOG_BH("put_data", "scrittura", 2, "errore");
+        return -EIO;
+    }
+
+    LOG_BH("put_data", "scrittura", 2, "successo");  
+
+    msg_block = (char *)bh->b_data;                 /* Prendo il messaggio contenuto nel blocco */
+
+    memcpy(msg_block, msg, msg_size);
+
+    mark_buffer_dirty(bh);                          /* Marco il buffer cache come DIRTY per flushare i dati */
+
+    brelse(bh);                                     /* Rilascio del buffer cache */
+
+    return bytes_to_copy - bytes_ret;
 	
 }
 

@@ -15,18 +15,71 @@ int main(int argc, char** argv){
 	ssize_t ret;
 	int n;
     const char * str = "ciao come stai? Spero tutto bene!";
+    const char * str2 = "Proviamo con il secondo tentativo... dovrebbe andare tutto bene.";
+    const char * str3 = "Blocco #0.";
     char *msg;
 
-    msg = (char *)malloc(1000);
+    msg = (char *)malloc(4000);
+    memset(msg,0,4000);
 
-	syscall(156,0, msg, 6);
+	syscall(156,0, msg, 4000);
+    printf("Blocco dati #0: %s\n", msg);
+    memset(msg,0,4000);
 
-    printf("%s\n", msg);
-	//ret = syscall(174,str, strlen(str)+1);
-    //syscall(177,1);
+	syscall(156,1, msg, 4000);
+    printf("Blocco dati #1: %s\n", msg);
+    memset(msg,0,4000);
 
-    //printf("Byte letti: %ld\n", ret);
-/*
+	ret = syscall(174,str, strlen(str)+1);
+    printf("Byte letti: %ld\n", ret);
+    memset(msg,0,4000);
+
+	syscall(156,0, msg, 4000);
+    printf("Blocco dati #0: %s\n", msg);
+    memset(msg,0,4000);
+
+	syscall(156,1, msg, 4000);
+    printf("Blocco dati #1: %s\n", msg);
+    memset(msg,0,4000);
+
+	ret = syscall(174,str2, strlen(str2)+1);
+    printf("Byte letti: %ld\n", ret);
+    memset(msg,0,4000);
+
+	syscall(156,0, msg, 4000);
+    printf("Blocco dati #0: %s\n", msg);
+    memset(msg,0,4000);
+
+	syscall(156,1, msg, 4000);
+    printf("Blocco dati #1: %s\n", msg);
+    memset(msg,0,4000);
+
+	ret = syscall(174,str, strlen(str)+1);
+    printf("Byte letti: %ld\n", ret);
+    memset(msg,0,4000);
+
+	syscall(156,0, msg, 4000);
+    printf("Blocco dati #0: %s\n", msg);
+    memset(msg,0,4000);
+
+	syscall(156,1, msg, 4000);
+    printf("Blocco dati #1: %s\n", msg);
+    memset(msg,0,4000);
+
+	ret = syscall(174,str3, strlen(str3)+1);
+    printf("Byte letti: %ld\n", ret);
+    memset(msg,0,4000);
+
+	syscall(156,0, msg, 4000);
+    printf("Blocco dati #0: %s\n", msg);
+    memset(msg,0,4000);
+
+	syscall(156,1, msg, 4000);
+    printf("Blocco dati #1: %s\n", msg);
+    memset(msg,0,4000);
+
+/*  syscall(177,1);
+
 	if(argc != 2)
 	{
 		printf("./user filename\n");

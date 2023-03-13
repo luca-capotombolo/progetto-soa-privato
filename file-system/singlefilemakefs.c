@@ -13,7 +13,7 @@ int main(int argc, char *argv[])
 	int fd, nbytes, nblocks, i, n;
 	ssize_t ret;
 	char *block_padding, *buffer;
-	char *file_body = "Blocco #%d.\n";
+	char *file_body = "Blocco #%d.";
 	struct soafs_super_block sb;
 	struct soafs_inode file_inode;
 	struct soafs_dir_entry record; 
