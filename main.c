@@ -4,6 +4,9 @@
 #include <linux/fs.h>
 #include <linux/version.h>
 #include <linux/syscalls.h>
+#include <linux/slab.h>         /* kmalloc() */
+#include <linux/uaccess.h>      /* copy_from_user() */
+#include <linux/buffer_head.h>  /* sb_bread()       */
 #include "lib/include/scth.h"
 #include "./headers/main_header.h"
 
@@ -22,225 +25,121 @@ unsigned long new_sys_call_array[] = {0x0, 0x0, 0x0};
 int restore[HACKED_ENTRIES] = {[0 ... (HACKED_ENTRIES-1)] -1};
 
 
-/*static int f(struct vfsmount *mnt, void *arg)
+
+static int check_offset(int offset)
 {
-
-    struct super_block *sb;
-
-    
-
-    if(mnt == NULL)
+    /*
+     * Tengo conto dei primi due blocchi, contenenti rispettivamente
+     * il superblocco e l'indice del file, e del fatto che il primo
+     * blocco ha indice pari a 0 (e non 1).
+     */
+    if( (offset + 2 > NBLOCKS - 1) || (offset < 0) )
+    {
         return 1;
-
-    if(!mnt)
-        return 1;
-
-    sb = mnt->mnt_sb;
-
-    if(strcmp("soafs", sb->s_type->name)==0)
-        return 1;
-
-    printk("%s: Tipologia %s.\n", MOD_NAME, sb->s_type->name);
+    }
 
     return 0;
-}*/
-
-
-
-/* static int get_path_file_0(void)
-{
-    char *path, *b;
-    struct dentry *d;
-
-    if(sb_global == NULL)
-    {
-        printk("%s: errore nella manipolazione del super blocco globale\n", MOD_NAME);
-        return 0;
-    }
-
-    path = (char *)kmalloc(1000, GFP_KERNEL);
-
-    if(path == NULL)
-    {
-        printk("Errore malloc.\n");
-        return 0;
-    }
-
-    printk("%s: Cerca del file in un file system di tipo %s\n", MOD_NAME, sb_global->s_type->name);
-
-    d = sb_global->s_root;
-
-    printk("%s: nome della dentry %s\n", MOD_NAME, d->d_name.name);
-
-    b = dentry_path_raw(d, path, 1000);
-
-    printk("%s: b vale %s\n", MOD_NAME, b);
-    
-    return 1;
-    
 }
 
 
 
-static int get_path_file_1(void)
+static int check_size(size_t size)
 {
-    char *path_root, *path_pwd, *b_root, *b_pwd;
-    struct path p_root, p_pwd;
-    struct fs_struct *fs;
 
-    if(sb_global == NULL)
+    if(size <= 0)
     {
-        printk("%s: errore nella manipolazione del super blocco globale\n", MOD_NAME);
-        return 0;
+        return 1;
     }
 
-    path_root = (char *)kmalloc(1000, GFP_KERNEL);
-    path_pwd = (char *)kmalloc(1000, GFP_KERNEL);
-
-    if(path_root == NULL || path_pwd == NULL)
-    {
-        printk("Errore malloc.\n");
-        return 0;
-    }
-
-    printk("%s: Cerca del file in un file system di tipo %s\n", MOD_NAME, sb_global->s_type->name);
-
-    fs = current->fs;
-
-    p_root = fs->root;
-
-    p_pwd = fs->pwd;
-
-    //b_root = d_absolute_path(&p_root, path_root, 1000);
-
-    //printk("%s: p_root b vale %s\n", MOD_NAME, b_root);
-
-    //b_pwd = d_absolute_path(&p_pwd, path_pwd, 1000);
-
-    //printk("%s: p_root b vale %s\n", MOD_NAME, b_pwd);
-    
-    return 1;
-    
+    return 0;
 }
 
 
 
-static int get_path_file_2(void)
+static int get_available_data(void)
 {
-    char *path_root, *path_pwd, *b_root, *b_pwd;
-    struct path p_root, p_pwd;
-    struct fs_struct *fs;
-
-    if(sb_global == NULL)
-    {
-        printk("%s: errore nella manipolazione del super blocco globale\n", MOD_NAME);
-        return 0;
-    }
-
-    path_root = (char *)kmalloc(1000, GFP_KERNEL);
-    path_pwd = (char *)kmalloc(1000, GFP_KERNEL);
-
-    if(path_root == NULL || path_pwd == NULL)
-    {
-        printk("Errore malloc.\n");
-        return 0;
-    }
-
-    printk("%s: Cerca del file in un file system di tipo %s\n", MOD_NAME, sb_global->s_type->name);
-
-    fs = current->fs;
-
-    p_root = fs->root;
-
-    p_pwd = fs->pwd;
-
-    b_root = d_path(&p_root, path_root, 1000);
-
-    b_pwd = d_path(&p_pwd, path_pwd, 1000);
-
-    printk("%s: b_root = %s\n", MOD_NAME, b_root);
-
-    printk("%s: b_pwd = %s\n", MOD_NAME, b_pwd);
-    
-    return 1;
-    
+    return SOAFS_BLOCK_SIZE - METADATA;
 }
 
 
 
-static int get_path_file_3(void)
-{
-    struct nsproxy *ns;
-    struct mnt_namespace* mnt_ns;
-    struct mount * root;
-    struct dentry *mnt_mountpoint;
-
-    ns = current->nsproxy;
-
-    mnt_ns = ns->mnt_ns;
-
-    root = mnt_ns->root;
-
-    mnt_mountpoint = root->mnt_mountpoint;    
-
-    return 1;
-    
-}*/
-
-
-
-static int check_is_mounted(void)
-{
-    if(!is_mounted)
-    {
-        printk("%s: Il file system presente sul device non è stato montato.\n", MOD_NAME);
-        return 0;
-    }
-    
-    printk("Il file system presente sul device è stato montato.\n");
-
-    return 1;
-}
-
-
-
-//TODO: Implementa la system call
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
-__SYSCALL_DEFINEx(1, _get_data, unsigned long, vaddr){
+__SYSCALL_DEFINEx(3, _get_data, int, offset, char *, destination, size_t, size){
 #else
-asmlinkage int sys_get_data(unsigned long vaddr){
+asmlinkage int sys_get_data(int offset, char * destination, size_t size){
 #endif
 
     int ret;
-    //struct file *filp = NULL;
+    int real_offset;
+    int str_len;
+    int available_data;
+    size_t byte_copy;
+    size_t byte_ret;
+    char *msg_block;                                            /* Il messaggio contenuto all'interno del blocco del device */   
+    struct buffer_head *bh = NULL;
     
-    printk("%s: Invocato la get_data.\n", MOD_NAME);
-
-    ret = check_is_mounted();
+    LOG_SYSTEM_CALL("get_data");
+    
+    ret = check_is_mounted();                                   /* verifico se il file system su cui si deve operare è stato effettivamente montato */
 
     if(!ret)
     {
+        LOG_DEV_ERR("get_data");
         return -ENODEV;
     }
 
-
-    //TODO: Recuperare il path del file the-file.
-
-    //filp = filp_open()
-
-    /*
-    if(IS_ERR(filp))
+    if( check_offset(offset) || check_size(size) )
     {
-        printk("%s: Errore apertura del file.\n", MOD_NAME);
+        LOG_PARAM_ERR("get_data");
+        return -EINVAL;
+    }
+
+    real_offset = offset + 2;                                   /* Non considero i blocchi 1 e 2 rispettivamente del superblocco e dell'inode */
+
+    bh = sb_bread(sb_global, real_offset);          /* Utilizziamo il buffer cache per caricare il blocco 'offset' richiesto */                      
+
+    if(bh == NULL)
+    {
+        LOG_BH("get_data", "lettura", offset, "errore");
         return -EIO;
     }
-    */
 
-    //vfs_read()
+    LOG_BH("get_data", "lettura", offset, "successo");
 
-    //manipolazione dei dati per identificare il blocco, se esiste
+    msg_block = (char *)bh->b_data;                 /* Prendo il messaggio contenuto nel blocco */
 
-    //filp_close()
+    brelse(bh);                                     /* Rilascio del buffer cache */
+
+    str_len = strlen(msg_block);                    /* Non tiene conto del terminatore di stringa */
+
+    printk("%s: il messaggio letto dal blocco del device è '%s' ed ha una dimensione di %d\n", MOD_NAME, msg_block, str_len);
+
+    available_data = get_available_data();
+
+    if(size > available_data)
+    {
+        /*
+        * Se la quantità di dati che mi stai chiedendo
+        * è strettamente maggiore della dimensione massima
+        * di un messaggio che può essere memorizzato, allora
+        * ti restituisco l'intero contenuto del blocco. Il
+        * terminatore di stringa è già presente nel blocco.
+        */
+        byte_copy = available_data;
+    }
+    else
+    {        
+        /*
+         * Altrimenti, ti restituisco la quantità di byte che
+         * mi chiedi. Metto il terminatore di stringa poiché
+         * il messaggio contenuto nel blocco potrebbe essere
+         * più lungo della dimensione 'size' richiesta.
+         */
+        byte_copy = size;
+        msg_block[byte_copy-1] = '\0';
+    }
+    
+    byte_ret = copy_to_user(destination, msg_block, byte_copy);
     
     return 0;
 	
@@ -250,25 +149,94 @@ asmlinkage int sys_get_data(unsigned long vaddr){
 
 //TODO: Implementa la system call
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
-__SYSCALL_DEFINEx(1, _put_data, unsigned long, vaddr){
+__SYSCALL_DEFINEx(2, _put_data, char *, source, size_t, size){
 #else
-asmlinkage int sys_put_data(unsigned long vaddr){
+asmlinkage int sys_put_data(char * source, size_t size){
 #endif
 
-    int ret;
+    int ret;    
+    char *msg;                      /* Il messaggio che si richiede di scrivere nel buffer */
+    size_t msg_size;                /* La dimensione del messaggio che verrà scritto nel buffer */    
+    size_t bytes_to_copy;           /* Il numero di bytes che verranno effettivamente copiati dallo spazio utente */    
+    unsigned long bytes_ret;        /* Il numero di bytes effettivamente copiati */
+    int available_data;
 
-    printk("%s: Invocato la put_data.\n", MOD_NAME);
+    LOG_SYSTEM_CALL("put_data");
 
-    ret = check_is_mounted();
+    if(size <= 0)
+    {
+        LOG_PARAM_ERR("put_data");
+        return -EINVAL;
+    }
 
-    printk("%s: Il device è stato montato su %s\n", MOD_NAME, mount_path);
+    ret = check_is_mounted();   /* verifico se il file system su cui si deve operare è stato effettivamente montato */
 
     if(!ret)
     {
+        LOG_DEV_ERR("get_data");
         return -ENODEV;
-    }    
+    }
 
-    return 0;
+    available_data = get_available_data();
+
+    if(size > available_data)
+    {
+        /*
+         * Si sta chiedendo di scrivere un messaggio
+         * che ha la dimensione maggiore di un blocco.
+         * Il messaggio verrà scritto parzialmente.
+         * Più precisamente, verrà scritto un numero di
+         * bytes pari a (SOAFS_BLOCK_SIZE - METADATA).
+         * La componente '-1' della variabile bytes_to_copy
+         * è dovuta al fatto che bisogna tener conto del
+         * terminatore di stringa '\0'.
+         */
+
+        msg_size = available_data;
+
+        bytes_to_copy = msg_size - 1;   
+     
+    }
+    else
+    {
+        /*
+         * Si assume che la stringa passata in input
+         * contenga già il terminatore di stringa '\0'.
+         * A questo punto, si sta chiedendo di scrivere
+         * un messaggio che può essere scritto in termini
+         * di dimensione all'interno del blocco del device.
+         */
+
+        msg_size = size;
+
+        bytes_to_copy = msg_size;
+
+    }
+
+
+    msg = (char *)kmalloc(msg_size, GFP_KERNEL);        /* Alloco la memoria per ospitare il messaggio proveniente dallo spazio utente */
+
+    if(msg == NULL)
+    {
+        printk("%s: errore nell'allocazione della memoria con la kmalloc()\n", MOD_NAME);
+
+        return -EIO;    
+    }
+
+    bytes_ret = copy_from_user(msg, source, bytes_to_copy);
+
+    printk("Sono stati copiati %ld bytes\n", bytes_ret);
+
+    if(bytes_to_copy!=msg_size)
+    {
+        msg[msg_size] = '\0';                           /* Inserisco il terminatore di stringa */
+    }
+
+    printk("%s: E' stato richiesto di scrivere il messaggio '%s'\n", MOD_NAME, msg);
+
+    printk("%s: Il file system su cui si sta lavorando è di tipo %s\n", MOD_NAME, sb_global->s_type->name);
+
+    return size - bytes_ret;
 	
 }
 
@@ -276,19 +244,20 @@ asmlinkage int sys_put_data(unsigned long vaddr){
 
 //TODO: Implementa la system call
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
-__SYSCALL_DEFINEx(1, _invalidate_data, unsigned long, vaddr){
+__SYSCALL_DEFINEx(1, _invalidate_data, int, offset){
 #else
-asmlinkage int sys_invalidate_data(unsigned long vaddr){
+asmlinkage int sys_invalidate_data(int offset){
 #endif
 
     int ret;
 
-    printk("%s: Invocato la invalidate_data.\n", MOD_NAME);
+    LOG_SYSTEM_CALL("invalidate_data");
 
     ret = check_is_mounted();
 
     if(!ret)
     {
+        LOG_DEV_ERR("get_data");
         return -ENODEV;
     }
 

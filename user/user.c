@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -13,11 +14,19 @@ int main(int argc, char** argv){
 	char * filename, *buffer;
 	ssize_t ret;
 	int n;
+    const char * str = "ciao come stai? Spero tutto bene!";
+    char *msg;
 
-	syscall(156,1);
-	syscall(174,1);
-    syscall(177,1);
+    msg = (char *)malloc(1000);
 
+	syscall(156,0, msg, 6);
+
+    printf("%s\n", msg);
+	//ret = syscall(174,str, strlen(str)+1);
+    //syscall(177,1);
+
+    //printf("Byte letti: %ld\n", ret);
+/*
 	if(argc != 2)
 	{
 		printf("./user filename\n");
@@ -54,6 +63,6 @@ int main(int argc, char** argv){
 	}
 
 	printf("Messaggio letto dal file:\n%s\n", buffer);
-
+*/
 	return 0;
 }

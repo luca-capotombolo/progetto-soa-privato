@@ -8,6 +8,7 @@
 #include <linux/types.h>/* uint64_t */
 
 
+
 /* Magic Number */
 #define SOAFS_MAGIC_NUMBER 0xabababab
 /* Taglia del blocco */
@@ -30,6 +31,8 @@
 #define NBLOCKS 4
 /* Versione del File System */
 #define VERSION 1
+/* Dimensione in bytes dei metadati da utilizzare */
+#define METADATA 0
 
 
 
@@ -59,10 +62,10 @@ struct soafs_dir_entry {
 /* inode */
 struct soafs_inode {
 	mode_t mode;
-    uid_t uid;      //Non ancora utilizzato nella formattazione.
-    gid_t gid;      //Non ancora utilizzato nella formattazione.
+    uid_t uid;                                                  //Non ancora utilizzato nella formattazione.
+    gid_t gid;                                                  //Non ancora utilizzato nella formattazione.
 	uint64_t inode_no;
-	uint64_t data_block_number;//not exploited
+	uint64_t data_block_number;                                 //not exploited
 	union {
 		uint64_t file_size;
 		uint64_t dir_children_count;
@@ -70,15 +73,16 @@ struct soafs_inode {
 };
 
 
-//file_system.c
-extern int is_mounted;
-extern char *mount_path;
-// file.c
-extern const struct inode_operations soafs_inode_ops;
-extern const struct file_operations soafs_file_operations; 
-// dir.c
-extern const struct file_operations soafs_dir_operations;
-//file_system.c
-extern struct file_system_type soafs_fs_type;
+
+extern int check_is_mounted(void);                              //file_system.c
+extern struct file_system_type soafs_fs_type;                   //file_system.c
+extern int is_mounted;                                          //file_system.c
+extern char *mount_path;                                        //file_system.c
+extern struct super_block * sb_global;                          //file_system.c
+extern const struct inode_operations soafs_inode_ops;           // file.c
+extern const struct file_operations soafs_file_operations;      // file.c
+extern const struct file_operations soafs_dir_operations;       // dir.c
+
+
 
 #endif /* _FILE_SYSTEM_H */

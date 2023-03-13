@@ -8,6 +8,25 @@
 
 
 
+
+/*
+ * Poiché per semplicità si è assunto di lavorare
+ * con una singola istanza di file system 'soafs',
+ * questa funzione verifica se è stata montata tale
+ * istanza.
+ */
+int check_is_mounted(void)
+{
+    if(!is_mounted)
+    {
+        return 0;
+    }
+
+    return 1;
+}
+
+
+
 static struct super_operations soafs_super_ops = {
 
 };
@@ -22,6 +41,7 @@ static struct dentry_operations soafs_dentry_ops = {
 /* Inizialmente non ho alcun montaggio */
 int is_mounted = 0;
 char *mount_path = NULL;
+struct super_block *sb_global = NULL;
 
 
 static int soafs_fill_super(struct super_block *sb, void *data, int silent) {   
@@ -118,6 +138,8 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     unlock_new_inode(root_inode);
     
     brelse(bh);
+
+    sb_global = sb;
 
     return 0;
 }

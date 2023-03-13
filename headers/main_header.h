@@ -18,4 +18,21 @@
 /* AUDIT */
 #define AUDIT if(1)
 
+/* Debugging per le system calls */
+#define LOG_SYSTEM_CALL(system_call)                                                                            \
+    printk("%s: è stata richiesta l'invocazione della system call %s.\n", MOD_NAME, system_call)
+
+/* Errore parametri system call */
+#define LOG_PARAM_ERR(system_call)                                                                              \
+    printk("%s: la %s è stata invocata con parametri non validi.\n", MOD_NAME, system_call)
+
+/* Errore DEVICE system call */
+#define LOG_DEV_ERR(system_call)                                                                                \
+    printk("%s: [%s] il device su cui operare non è stato montato.\n", MOD_NAME, system_call)
+
+/* Errore DEVICE system call */
+#define LOG_BH(system_call, operazione, offset, esito)                                                            \
+    printk("%s: [%s] %s nella %s del blocco con indice %d\n", MOD_NAME, system_call, esito, operazione, offset)
+                                                
+
 #endif
