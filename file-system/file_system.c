@@ -114,15 +114,19 @@ void insert_sorted_list(struct block *block)
             prev = head_sorted_list;
             curr = head_sorted_list->sorted_list_next;
 
-            while(!curr)
+            while(curr!=NULL)
             {
-                if( (curr->pos) > (block->pos))
+                if((curr->pos) > (block->pos))
+                {
                     break;
+                }
+                prev = curr;
+                curr = curr->sorted_list_next;
             }
+            
+            block->sorted_list_next = curr;
+            prev -> sorted_list_next = block;        
         }   
-
-        block->sorted_list_next = curr;
-        prev -> sorted_list_next = block;
     }
 
 }
@@ -175,15 +179,13 @@ int insert_free_list(uint64_t index)
 int insert_hash_table_valid(struct soafs_block *data_block, uint64_t pos, uint64_t index, int x)
 {
     int num_entry;
-    struct block *head;
     struct block *new_item;
     struct block *old_head;
-    struct ht_valid_entry ht_entry; 
+    struct ht_valid_entry *ht_entry; 
 
     /* Identifico la lista corretta nella hash table */
     num_entry = index % x;
-    ht_entry = hash_table_valid[num_entry];
-    head = ht_entry.head_list;
+    ht_entry = &hash_table_valid[num_entry];
 
     /* Alloco il nuovo elemento da inserire nella lista */
     new_item = (struct block *)kmalloc(sizeof(struct block), GFP_KERNEL);
@@ -214,16 +216,16 @@ int insert_hash_table_valid(struct soafs_block *data_block, uint64_t pos, uint64
     printk("Stringa copiata per il blocco di indice %lld: %s\n", index, new_item->msg);
 
     /* Inserimento in testa */
-    if(head == NULL)
+    if(ht_entry->head_list == NULL)
     {
         /* La lista è vuota */
-        head = new_item;
-        new_item->hash_table_next = NULL;
+        ht_entry->head_list = new_item;
+        ht_entry->head_list->hash_table_next = NULL;
     }
     else
     {
-        old_head = head;
-        head = new_item;
+        old_head = ht_entry->head_list;
+        ht_entry->head_list = new_item;
         new_item->hash_table_next = old_head;
     }
 
@@ -243,11 +245,62 @@ void scan_free_list(void)
 
     curr = head_free_block_list;
 
-    while(!curr)
+    printk("%s: ------------------------------INIZIO FREE LIST------------------------------------------", MOD_NAME);
+
+    while(curr!=NULL)
     {
         printk("Blocco #%lld\n", curr->block_index);
-        curr = curr ->next;
+        curr = curr->next;
     }
+
+    printk("%s: ----------------------------FINE FREE LIST-------------------------------------------", MOD_NAME);
+}
+
+void scan_sorted_list(void)
+{
+    struct block *curr;
+
+    curr = head_sorted_list;
+    
+    printk("%s: ----------------------------------INIZIO SORTED LIST  ---------------------------------------------", MOD_NAME);
+
+    while(curr!=NULL)
+    {
+        printk("Blocco #%lld - Messaggio %s\n", curr->block_index, curr->msg);
+        curr = curr->sorted_list_next;
+    }
+
+    printk("%s: --------------------------------FINE SORTED LIST -----------------------------------------", MOD_NAME);
+    
+}
+
+
+
+void scan_hash_table(int x)
+{
+    int entry_num;
+    struct ht_valid_entry entry;
+    struct block *item;
+    
+    printk("%s:-------------------------- INIZIO HASH TABLE --------------------------------------------------\n", MOD_NAME);
+
+    for(entry_num=0; entry_num<x; entry_num++)
+    {
+        printk("%s: ---------------------------------------------------------------------------------", MOD_NAME);
+        entry = hash_table_valid[entry_num];
+        item = entry.head_list;
+
+        while(item!=NULL)
+        {
+            printk("%s: Blocco #%lld\n", MOD_NAME, item->block_index);
+            item = item ->hash_table_next;
+        }
+
+        printk("%s: ---------------------------------------------------------------------------------", MOD_NAME);
+        
+    }
+
+    printk("%s: -------------------------- FINE HASH TABLE --------------------------------------------------\n", MOD_NAME);
 }
 
 
@@ -333,7 +386,9 @@ static int init_data_structure_core(uint64_t num_data_block)
 
     scan_free_list();
 
-    //scan_sorted_list();
+    scan_sorted_list();
+
+    scan_hash_table(x);
 
     return 0;
 }

@@ -151,11 +151,12 @@ int main(int argc, char *argv[])
         block->metadata = metadata;
 
         metadata += 1;
-        
+#ifdef ALTERNATO
         if(i%2==0)
             metadata = metadata & MASK_POS;
         else
             metadata = metadata | MASK_VALID;
+#endif
         
         sprintf(block->msg, file_body, i);
 
