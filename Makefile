@@ -15,7 +15,7 @@ clean:
 
 create-fs:
 	dd bs=4096 count=100 if=/dev/zero of=./file-system/image
-	./file-system/singlefilemakefs ./file-system/image 4
+	./file-system/singlefilemakefs ./file-system/image 16
 
 mount-module:
 	insmod my_module.ko the_syscall_table=$(A)

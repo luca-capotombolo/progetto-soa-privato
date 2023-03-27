@@ -12,11 +12,13 @@ int main(int argc, char *argv[])
 {
 	int fd, nbytes, nblocks, i, n;
 	ssize_t ret;
-	char *block_padding, *buffer;
+	char *block_padding;
 	char *file_body = "Blocco #%d.";
 	struct soafs_super_block sb;
 	struct soafs_inode file_inode;
-	struct soafs_dir_entry record; 
+	//struct soafs_dir_entry record; 
+    struct soafs_block *block = NULL;
+    uint64_t metadata = 0x8000000000000000;
 
 	if (argc != 3) {
 		printf("Invocazione non corretta.\nSi deve eseguire: ./singlefilemakefs <device> <NBLOCKS>\n");
@@ -29,6 +31,8 @@ int main(int argc, char *argv[])
 		perror("Errore nell'apertura del device.\n");
 		return -1;
 	}
+
+    printf("Il nome del device è: %s\n", argv[1]);
 
     /* Recupero il numero di blocchi del device */
     nblocks = atoi(argv[2]);
@@ -78,7 +82,7 @@ int main(int argc, char *argv[])
      * Devo togliere il blocco contenente l'inode
      * del file e il blocco contenente il superblocco.
      */
-    file_inode.data_block_number = nblocks - 2;
+    file_inode.data_block_number = nblocks - NUM_NODATA_BLOCK;
 
     /*
      * La dimensione del file è pari al contenuto di tutti i
@@ -124,51 +128,44 @@ int main(int argc, char *argv[])
 
 	/* Popolo i blocchi del device che contengono i dati del file. */
 
-    /* Tengo conto anche del terminatore di stringa. */
-    n = strlen(file_body) + 1;
-
     /* 
      * All'interno del buffer inserisco il contenuto dei vari blocchi
      * che si differenzia a seconda dell'identificativo del blocco.
      */
-    buffer = (char *)malloc(n);
-    if(buffer==NULL)
-    {
-        printf("Errore all'allocazione della memoria per il buffer.\n");
-        close(fd);
-        return -1;
-    }
 
     /* Processo di scrittura dei blocchi di dati del file */
-    for(i=0; i<(nblocks - 2); i++)
+    for(i=0; i<(nblocks - NUM_NODATA_BLOCK); i++)
     {
-        sprintf(buffer, file_body, i);
-        buffer[n-1] = '\0';
-        printf("Contenuto del buffer %d: %s\n", i, buffer);
+        block = (struct soafs_block *)malloc(sizeof(struct soafs_block));
 
-        /* Scrittura del contenuto effettivo del blocco */
-	    ret = write(fd, buffer, n);
-	    if (ret != n) {
-		    printf("Errore nella scrittura dei dati per il blocco %d.\n", i);
-		    close(fd);
-		    return -1;
-	    }
-
-        /* Padding per il blocco */
-	    nbytes = SOAFS_BLOCK_SIZE - n;
-
-	    block_padding = malloc(nbytes);
-        if(block_padding==NULL)
+        if(block==NULL)
         {
-		    printf("Errore nell'allocazione dei byte di padding per il blocco %d.\n", i);
-		    close(fd);
-		    return -1;
+            printf("Errore malloc() iterazione %d\n.", i);
+            return 1;
         }
 
-        /* Scrittura dei byte di padding del blocco */
-        ret = write(fd, block_padding, nbytes);
-	    if (ret != nbytes) {
-		    printf("Errore nella scrittura dei byte di padding per il blocco %d.\n", i);
+        /* Azzero tutti il contenuto della struttura dati */
+        memset(block, 0, sizeof(struct soafs_block));
+
+        /* Setto i metadati relativi alla validità del blocco e alla posizione nell'ordinamento */
+        block->metadata = metadata;
+
+        metadata += 1;
+        
+        if(i%2==0)
+            metadata = metadata & MASK_POS;
+        else
+            metadata = metadata | MASK_VALID;
+        
+        sprintf(block->msg, file_body, i);
+
+        //printf("Contenuto del buffer %d: %s\n", i, block->msg);
+
+        /* Scrittura del contenuto effettivo del blocco */
+	    ret = write(fd, block, sizeof(struct soafs_block));
+
+	    if (ret != SOAFS_BLOCK_SIZE) {
+		    printf("Errore nella scrittura dei dati per il blocco %d.\n", i);
 		    close(fd);
 		    return -1;
 	    }

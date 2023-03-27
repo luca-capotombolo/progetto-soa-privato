@@ -7,6 +7,9 @@
 #include <linux/slab.h>         /* kmalloc() */
 #include <linux/uaccess.h>      /* copy_from_user() */
 #include <linux/buffer_head.h>  /* sb_bread()       */
+
+#include <linux/log2.h>         /* ilog2()  */
+
 #include "lib/include/scth.h"
 #include "./headers/main_header.h"
 
@@ -294,6 +297,7 @@ asmlinkage int sys_invalidate_data(int offset){
 #endif
 
     int ret;
+    int log;
 
     LOG_SYSTEM_CALL("invalidate_data");
 
@@ -304,6 +308,10 @@ asmlinkage int sys_invalidate_data(int offset){
         LOG_DEV_ERR("get_data");
         return -ENODEV;
     }
+
+    log = ilog2(offset);
+
+    printk("%s: Il valore del logaritmo pari a %d.\n", MOD_NAME, log);
 
     return 0;
 	

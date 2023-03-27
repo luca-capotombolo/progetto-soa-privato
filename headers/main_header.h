@@ -7,14 +7,25 @@
 
 /* Nome del modulo */
 #define MOD_NAME "SOA-22-23"
+
 /* Descrizione del modulo */
 #define DESCRIPTION "Progetto Sistemi Operativi Avanzati AA 2022-2023"
+
 /* Autore del modulo */
 #define AUTHOR "Luca Capotombolo <capoluca99@gmail.com>"
+
 /* Licenza software */
 #define LICENSE "GPL"
+
+/* Periodo per il kernel thread */
+#define PERIOD 10
+
+/* Maschera per recuperare il valore dell'epoca */
+#define MASK 0X8000000000000000
+
 /* Numero di entry della System Call table da recuperare */
 #define HACKED_ENTRIES (int)(sizeof(new_sys_call_array)/sizeof(unsigned long))
+
 /* AUDIT */
 #define AUDIT if(1)
 
