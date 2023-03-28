@@ -1,15 +1,13 @@
 #include <linux/init.h>
 #include <linux/module.h>
-#include <linux/kernel.h>	/* Needed for KERN_INFO */
+#include <linux/kernel.h>	        /* Needed for KERN_INFO */
 #include <linux/fs.h>
 #include <linux/version.h>
 #include <linux/syscalls.h>
-#include <linux/slab.h>         /* kmalloc() */
-#include <linux/uaccess.h>      /* copy_from_user() */
-#include <linux/buffer_head.h>  /* sb_bread()       */
-
-#include <linux/log2.h>         /* ilog2()  */
-
+#include <linux/slab.h>             /* kmalloc() */
+#include <linux/uaccess.h>          /* copy_from_user() */
+#include <linux/buffer_head.h>      /* sb_bread()       */
+#include <linux/log2.h>             /* ilog2()  */
 #include "lib/include/scth.h"
 #include "./headers/main_header.h"
 
@@ -408,6 +406,8 @@ static void soafs_exit(void)
     }
 
 }
+
+
 
 module_init(soafs_init);
 module_exit(soafs_exit);

@@ -28,7 +28,7 @@
 /* Nome dell'unico file */
 #define SOAFS_UNIQUE_FILE_NAME "the-file"
 /* Numero massimo di blocchi supportato dal device */
-#define NBLOCKS 258
+#define NBLOCKS 514
 /* Versione del File System */
 #define VERSION 1
 /* Dimensione in bytes dei metadati da utilizzare */

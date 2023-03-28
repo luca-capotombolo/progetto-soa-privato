@@ -1,10 +1,9 @@
-#include <linux/fs.h> /* sb_set_blocksize()-iget_locked()-inode_init_owner()-unlock_new_inode()-kill_block_super()-mount_bdev() */
+#include <linux/fs.h>           /* sb_set_blocksize()-iget_locked()-inode_init_owner()-unlock_new_inode()-kill_block_super()-mount_bdev() */
 #include <linux/timekeeping.h>
-#include <linux/time.h>/* ktime_get_real_ts64() */
-#include <linux/buffer_head.h>/* sb_bread()-brelse() */
-#include <linux/dcache.h>/* d_make_root() */
-#include <linux/string.h> /* strlen() */
-
+#include <linux/time.h>         /* ktime_get_real_ts64() */
+#include <linux/buffer_head.h>  /* sb_bread()-brelse() */
+#include <linux/dcache.h>       /* d_make_root() */
+#include <linux/string.h>       /* strlen() */
 #include <linux/log2.h>         /* ilog2()  */
 #include <linux/slab.h>         /* kmalloc() */
 
@@ -17,8 +16,8 @@ struct super_block *sb_global = NULL;                           /* Riferimento a
 
 struct block *head_sorted_list = NULL;                          /* Puntatore alla testa della lista contenente i blocchi nell'ordine di consegna */
 
-struct block_free *head_free_block_list = NULL;                      /* Puntatore alla testa della lista contenente i blocchi liberi */
-struct ht_valid_entry *hash_table_valid = NULL;                /* Implementazione della hash table hash_table_valid */
+struct block_free *head_free_block_list = NULL;                 /* Puntatore alla testa della lista contenente i blocchi liberi */
+struct ht_valid_entry *hash_table_valid = NULL;                 /* Implementazione della hash table hash_table_valid */
 
 
 
@@ -431,7 +430,7 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     /* Faccio il check per verificare se il numero di blocchi nel dispositivo è valido */
     num_block = sb_disk->num_block;
 
-    if(num_block > NBLOCKS)
+    if( (num_block > NBLOCKS) || ((num_block - NUM_NODATA_BLOCK) <= 0) )
     {
         printk("%s: Il numero di blocchi del dispositivo non è valido.\n", MOD_NAME);
         brelse(bh);
