@@ -11,13 +11,15 @@
 
 
 
-int is_mounted = 0;                                             /* Inizialmente non ho alcun montaggio */
-struct super_block *sb_global = NULL;                           /* Riferimento al superblocco */
+int is_mounted = 0;                                             /* Inizialmente non ho alcun montaggio. */
 
-struct block *head_sorted_list = NULL;                          /* Puntatore alla testa della lista contenente i blocchi nell'ordine di consegna */
+struct super_block *sb_global = NULL;                           /* Riferimento al superblocco. */
 
-struct block_free *head_free_block_list = NULL;                 /* Puntatore alla testa della lista contenente i blocchi liberi */
-struct ht_valid_entry *hash_table_valid = NULL;                 /* Implementazione della hash table hash_table_valid */
+struct block *head_sorted_list = NULL;                          /* Puntatore alla testa della lista contenente i blocchi nell'ordine di consegna. */
+
+struct block_free *head_free_block_list = NULL;                 /* Puntatore alla testa della lista contenente i blocchi liberi. */
+
+struct ht_valid_entry *hash_table_valid = NULL;                 /* Hash table */
 
 
 
@@ -86,8 +88,14 @@ int compute_num_rows(uint64_t num_data_block)
 
 
 /*
- * Inserisce un nuovo elemento all'interno della lista
- * dei blocchi ordinata secondo l'ordine di consegna.
+ * Inserisce un nuovo elemento all'interno della
+ * lista contenente i blocchi ordinati secondo
+ * l'ordine di consegna. L'elemento non deve essere
+ * nuovamente allocato ma si collega l'elemento che 
+ * è stato precedentemente allocato.
+ * Il campo 'pos' rappresenta la posizione del blocco
+ * nella lista ordinata e viene sfruttato per determinare
+ * la corretta posizione all'interno della lista.
  */
 void insert_sorted_list(struct block *block)
 {
@@ -110,6 +118,7 @@ void insert_sorted_list(struct block *block)
         }
         else
         {
+            /* Cerco la posizione per inserire il nuovo elemento */
             prev = head_sorted_list;
             curr = head_sorted_list->sorted_list_next;
 
@@ -127,7 +136,6 @@ void insert_sorted_list(struct block *block)
             prev -> sorted_list_next = block;        
         }   
     }
-
 }
 
 
@@ -135,7 +143,9 @@ void insert_sorted_list(struct block *block)
 /*
  * Inserisce un nuovo elemento all'interno
  * della lista contenente le informazioni
- * relative ai blocchi liberi.
+ * relative ai blocchi liberi. L'inserimento
+ * viene fatto in testa poiché non mi importa
+ * mantenere alcun ordine tra i blocchi.
  */
 int insert_free_list(uint64_t index)
 {
@@ -177,21 +187,21 @@ int insert_free_list(uint64_t index)
  */
 int insert_hash_table_valid(struct soafs_block *data_block, uint64_t pos, uint64_t index, int x)
 {
-    int num_entry;
+    int num_entry_ht;
     struct block *new_item;
     struct block *old_head;
     struct ht_valid_entry *ht_entry; 
 
-    /* Identifico la lista corretta nella hash table */
-    num_entry = index % x;
-    ht_entry = &hash_table_valid[num_entry];
+    /* Identifico la lista corretta nella hash table per effettuare l'inserimento */
+    num_entry_ht = index % x;
+    ht_entry = &(hash_table_valid[num_entry_ht]);
 
     /* Alloco il nuovo elemento da inserire nella lista */
     new_item = (struct block *)kmalloc(sizeof(struct block), GFP_KERNEL);
     
-    if(new_item==NULL)
+    if(new_item == NULL)
     {
-        printk("Errore malloc() inserimento hash table.");
+        printk("%s: Errore malloc() nell'allocazione del nuovo elemento da inserire nella hash table.", MOD_NAME);
         return 1;
     }
 
@@ -202,17 +212,17 @@ int insert_hash_table_valid(struct soafs_block *data_block, uint64_t pos, uint64
 
     new_item->msg = (char *)kmalloc(strlen(data_block->msg) + 1, GFP_KERNEL);
 
-    if(new_item->msg==NULL)
+    if(new_item->msg == NULL)
     {
-        printk("Errore malloc() stringa inserimento hash table.");
+        printk("%s: Errore malloc() nell'allocazione della memoria per il messaggio dell'elemento da inserire nella hash table.", MOD_NAME);
         return 1;
     }
 
-    printk("%s: Stringa da copiare - %s.\n", MOD_NAME, data_block->msg);
+    printk("%s: Stringa da copiare per il blocco con indice %lld - %s.\n", MOD_NAME, index, data_block->msg);
 
     strncpy(new_item->msg, data_block->msg, strlen(data_block->msg) + 1);
 
-    printk("Stringa copiata per il blocco di indice %lld: %s\n", index, new_item->msg);
+    printk("Lunghezza della stringa copiata %ld - Dimensione del buffer allocato %ld.\n", strlen(data_block->msg) + 1, strlen(new_item->msg) + 1);
 
     /* Inserimento in testa */
     if(ht_entry->head_list == NULL)
@@ -228,11 +238,12 @@ int insert_hash_table_valid(struct soafs_block *data_block, uint64_t pos, uint64
         new_item->hash_table_next = old_head;
     }
 
-    printk("%s: Inserimento blocco %lld nella entry #%d.\n", MOD_NAME, index, num_entry);
+    printk("%s: Inserimento blocco %lld nella entry #%d completato con successo.\n", MOD_NAME, index, num_entry_ht);
 
+    /* Inserimento del blocco nella lista ordinata */
     insert_sorted_list(new_item);
 
-    asm volatile("mfence");//make it visible to readers
+    asm volatile("mfence");
 
     return 0;   
     
@@ -311,39 +322,52 @@ static int init_data_structure_core(uint64_t num_data_block)
 {
     int x;
     uint64_t index;
-    size_t size;
+    size_t size_ht;
     struct buffer_head *bh = NULL;
     struct soafs_block *data_block = NULL;
 
+    /* 
+     * Check sul valore del superblocco 
+     * poiché dovrà essere utilizzato per
+     * l'inizializzazione delle strutture dati.
+     */
     if(sb_global == NULL)
     {
         printk("%s: Il contenuto del superblocco non è valido. Impossibile inizializzare le strutture dati core.\n", MOD_NAME);
         return 1;
     }
 
+    /* Deve esistere almeno un blocco dati. */
     if(num_data_block <= 0)
     {
-        printk("%s: Il numero di blocchi nel device non è valido. Impossibile inizializzare le strutture dati core.\n", MOD_NAME);
+        printk("%s: Il numero di blocchi del device non è valido. Impossibile inizializzare le strutture dati core.\n", MOD_NAME);
         return 1;
     }
 
-    x = compute_num_rows(num_data_block);                   /* Computo il numero delle entry X della tabella hash */
+    /*
+     * Computo il numero delle entry X della
+     * tabella hash per determinare la quantità
+     * di memoria da allocare necessaria.
+     */
 
-    size = x * sizeof(struct ht_valid_entry);                   /* Computo la quantità di memoria da allocare */
+    x = compute_num_rows(num_data_block);
 
-    hash_table_valid = (struct ht_valid_entry *)kmalloc(size, GFP_KERNEL);
+    size_ht = x * sizeof(struct ht_valid_entry);
 
-    if(hash_table_valid==NULL)
+    hash_table_valid = (struct ht_valid_entry *)kmalloc(size_ht, GFP_KERNEL);
+
+    if(hash_table_valid == NULL)
     {
-        printk("%s: Errore malloc.", MOD_NAME);
+        printk("%s: Errore malloc() nell'allocazione della memoria per la tabella hash.\n", MOD_NAME);
         return 1;
     } 
 
-    printk("%s: Il numero di liste nella tabella hash è %d\n", MOD_NAME, x);
+    printk("%s: Il numero di liste nella tabella hash è pari a %d\n", MOD_NAME, x);
 
+    /* Inizialmente le liste della tabella hash sono vuote. */
     for(index=0;index<x;index++)
     {
-        hash_table_valid[index].head_list = NULL;
+        (&hash_table_valid[index])->head_list = NULL;
     }
 
     /*
@@ -351,42 +375,49 @@ static int init_data_structure_core(uint64_t num_data_block)
      * inizializzare le strutture dati. Se il blocco
      * su cui sto iterando ha un contenuto valido
      * allora dovrò aggiungere le relative informazioni
-     * alle strutture dati hash_table_valid e head_sorted_list;
-     * altrimenti, dovrò aggiungere le informazioni sul blocco
-     * all'interno della lista head_free_block_list.
+     * all'interno delle strutture dati 'hash_table_valid'
+     * e 'head_sorted_list'; altrimenti, dovrò aggiungere
+     * le informazioni sul blocco all'interno della lista
+     * 'head_free_block_list'.
      */
     for(index=0; index<num_data_block; index++)
     {
 
-        /* Leggo il blocco dal device */
+        /* Leggo il blocco di dati dal device */
         bh = sb_bread(sb_global, NUM_NODATA_BLOCK + index);                   
 
         if(bh == NULL)
         {
-            printk("%s: Errore buffer head...\n", MOD_NAME);
+            printk("%s: Errore esecuzione della sb_bread() per la lettura del blocco di dati con indice %lld...\n", MOD_NAME, index);
             return 1;
         }
 
         data_block = (struct soafs_block *)bh->b_data;
 
+        /* Faccio un check sulla validità del blocco di dati. */
+
         if(data_block->metadata & MASK_VALID)
         {
-            // printk("%s: Il blocco di dati con indice %lld è valido e si trova in posizione %lld.\n", MOD_NAME, index, data_block->metadata & MASK_POS);
+            printk("%s: Il blocco di dati con indice %lld è valido e nella lista ordinata si trova in posizione %lld.\n", MOD_NAME, index, (data_block->metadata & MASK_POS) );
             insert_hash_table_valid(data_block, data_block->metadata & MASK_POS, index, x);
         }
         else
         {
-            // printk("%s: Il blocco di dati con indice %lld non è valido e si trova in posizione %lld.\n", MOD_NAME, index, data_block->metadata & MASK_POS);
+            printk("%s: Il blocco di dati con indice %lld non è valido e nella lista ordinata si trova in posizione %lld.\n", MOD_NAME, index, (data_block->metadata & MASK_POS) );
             insert_free_list(index);
         }
 
+        /* Rilascio il buffer poiché non ho più bisogno dei dati. */
         brelse(bh);
     }
 
+    /* scansione della lista contenente le informazioni dei blocchi liberi. */
     scan_free_list();
 
+    /* scansione della lista contenente i blocchi ordinati per inserimento. */
     scan_sorted_list();
 
+    /* scansione delle liste della hash table */
     scan_hash_table(x);
 
     return 0;
@@ -507,7 +538,8 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
 
     /* 
      * Devo escludere i due blocchi contenenti rispettivamente
-     * il superblocco e l'inode del file.
+     * il superblocco e l'inode del file. Alla funzione passo
+     * il numero dei soli blocchi di dati.
      */
     ret = init_data_structure_core(num_block - 2);
 
