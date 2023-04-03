@@ -12,15 +12,7 @@
 
 
 int is_mounted = 0;                                             /* Inizialmente non ho alcun montaggio. */
-
 struct super_block *sb_global = NULL;                           /* Riferimento al superblocco. */
-
-struct block *head_sorted_list = NULL;                          /* Puntatore alla testa della lista contenente i blocchi nell'ordine di consegna. */
-
-struct block_free *head_free_block_list = NULL;                 /* Puntatore alla testa della lista contenente i blocchi liberi. */
-
-struct ht_valid_entry *hash_table_valid = NULL;                 /* Hash table */
-
 
 
 static struct super_operations soafs_super_ops = {
@@ -52,379 +44,6 @@ int check_is_mounted(void)
 }
 
 
-
-/*
- * Computa il numero di righe della tabella hash
- * applicando la formula. Si cerca di avere un numero
- * logaritmico di elementi per ogni lista della
- * hast_table_valid.
- */
-int compute_num_rows(uint64_t num_data_block)
-{
-    int x;
-    int list_len;
-    
-    if(num_data_block == 1)
-    {
-        return 1;      /* Non devo applicare la formula e ho solamente una lista */
-    }
- 
-    list_len = ilog2(num_data_block) + 1;    /* Computo il numero di elementi massimo che posso avere in una lista */
-
-    if((num_data_block % list_len) == 0)
-    {
-        x = num_data_block / list_len;
-    }
-    else
-    {
-        x = (num_data_block / list_len) + 1;
-    }
-
-    printk("%s: La lunghezza massima di una entry della tabella hash è pari a %d.\n", MOD_NAME, list_len);
-    
-    return x;
-}
-
-
-
-/*
- * Inserisce un nuovo elemento all'interno della
- * lista contenente i blocchi ordinati secondo
- * l'ordine di consegna. L'elemento non deve essere
- * nuovamente allocato ma si collega l'elemento che 
- * è stato precedentemente allocato.
- * Il campo 'pos' rappresenta la posizione del blocco
- * nella lista ordinata e viene sfruttato per determinare
- * la corretta posizione all'interno della lista.
- */
-void insert_sorted_list(struct block *block)
-{
-    struct block *prev;
-    struct block *curr;
-
-    if(head_sorted_list == NULL)
-    {
-        /* La lista è vuota */
-        head_sorted_list = block;
-        block->sorted_list_next = NULL;
-    }
-    else
-    {
-        if( (head_sorted_list->pos) > (block->pos) )
-        {
-            /* Inserimento in testa */
-            block->sorted_list_next = head_sorted_list;
-            head_sorted_list = block;
-        }
-        else
-        {
-            /* Cerco la posizione per inserire il nuovo elemento */
-            prev = head_sorted_list;
-            curr = head_sorted_list->sorted_list_next;
-
-            while(curr!=NULL)
-            {
-                if((curr->pos) > (block->pos))
-                {
-                    break;
-                }
-                prev = curr;
-                curr = curr->sorted_list_next;
-            }
-            
-            block->sorted_list_next = curr;
-            prev -> sorted_list_next = block;        
-        }   
-    }
-}
-
-
-
-/*
- * Inserisce un nuovo elemento all'interno
- * della lista contenente le informazioni
- * relative ai blocchi liberi. L'inserimento
- * viene fatto in testa poiché non mi importa
- * mantenere alcun ordine tra i blocchi.
- */
-int insert_free_list(uint64_t index)
-{
-    struct block_free *new_item;
-    struct block_free *old_head;
-
-    new_item = (struct block_free *)kmalloc(sizeof(struct block_free), GFP_KERNEL);
-    if(new_item==NULL)
-    {
-        printk("%s: Errore malloc() sorted_list.", MOD_NAME);
-        return 1;
-    }
-    new_item->block_index = index;
-
-    if(head_free_block_list == NULL)
-    {
-        head_free_block_list = new_item;
-        new_item -> next = NULL;
-    }
-    else
-    {
-        old_head = head_free_block_list;
-        head_free_block_list = new_item;
-        new_item -> next = old_head;
-    }
-
-    printk("%s: Inserto il blocco %lld nella coda blocchi liberi.\n", MOD_NAME, index);
-
-    asm volatile("mfence");
-
-    return 0;
-}
-
-
-
-/*
- * Inserisce un nuovo elemento all'interno della lista
- * identificata dal parametro 'x'.
- */
-int insert_hash_table_valid(struct soafs_block *data_block, uint64_t pos, uint64_t index, int x)
-{
-    int num_entry_ht;
-    struct block *new_item;
-    struct block *old_head;
-    struct ht_valid_entry *ht_entry; 
-
-    /* Identifico la lista corretta nella hash table per effettuare l'inserimento */
-    num_entry_ht = index % x;
-    ht_entry = &(hash_table_valid[num_entry_ht]);
-
-    /* Alloco il nuovo elemento da inserire nella lista */
-    new_item = (struct block *)kmalloc(sizeof(struct block), GFP_KERNEL);
-    
-    if(new_item == NULL)
-    {
-        printk("%s: Errore malloc() nell'allocazione del nuovo elemento da inserire nella hash table.", MOD_NAME);
-        return 1;
-    }
-
-    /* Inizializzo il nuovo elemento */
-    new_item->block_index = index;
-
-    new_item->pos = pos;
-
-    new_item->msg = (char *)kmalloc(strlen(data_block->msg) + 1, GFP_KERNEL);
-
-    if(new_item->msg == NULL)
-    {
-        printk("%s: Errore malloc() nell'allocazione della memoria per il messaggio dell'elemento da inserire nella hash table.", MOD_NAME);
-        return 1;
-    }
-
-    printk("%s: Stringa da copiare per il blocco con indice %lld - %s.\n", MOD_NAME, index, data_block->msg);
-
-    strncpy(new_item->msg, data_block->msg, strlen(data_block->msg) + 1);
-
-    printk("Lunghezza della stringa copiata %ld - Dimensione del buffer allocato %ld.\n", strlen(data_block->msg) + 1, strlen(new_item->msg) + 1);
-
-    /* Inserimento in testa */
-    if(ht_entry->head_list == NULL)
-    {
-        /* La lista è vuota */
-        ht_entry->head_list = new_item;
-        ht_entry->head_list->hash_table_next = NULL;
-    }
-    else
-    {
-        old_head = ht_entry->head_list;
-        ht_entry->head_list = new_item;
-        new_item->hash_table_next = old_head;
-    }
-
-    printk("%s: Inserimento blocco %lld nella entry #%d completato con successo.\n", MOD_NAME, index, num_entry_ht);
-
-    /* Inserimento del blocco nella lista ordinata */
-    insert_sorted_list(new_item);
-
-    asm volatile("mfence");
-
-    return 0;   
-    
-}
-
-void scan_free_list(void)
-{
-    struct block_free *curr;
-
-    curr = head_free_block_list;
-
-    printk("%s: ------------------------------INIZIO FREE LIST------------------------------------------", MOD_NAME);
-
-    while(curr!=NULL)
-    {
-        printk("Blocco #%lld\n", curr->block_index);
-        curr = curr->next;
-    }
-
-    printk("%s: ----------------------------FINE FREE LIST-------------------------------------------", MOD_NAME);
-}
-
-void scan_sorted_list(void)
-{
-    struct block *curr;
-
-    curr = head_sorted_list;
-    
-    printk("%s: ----------------------------------INIZIO SORTED LIST  ---------------------------------------------", MOD_NAME);
-
-    while(curr!=NULL)
-    {
-        printk("Blocco #%lld - Messaggio %s\n", curr->block_index, curr->msg);
-        curr = curr->sorted_list_next;
-    }
-
-    printk("%s: --------------------------------FINE SORTED LIST -----------------------------------------", MOD_NAME);
-    
-}
-
-
-
-void scan_hash_table(int x)
-{
-    int entry_num;
-    struct ht_valid_entry entry;
-    struct block *item;
-    
-    printk("%s:-------------------------- INIZIO HASH TABLE --------------------------------------------------\n", MOD_NAME);
-
-    for(entry_num=0; entry_num<x; entry_num++)
-    {
-        printk("%s: ---------------------------------------------------------------------------------", MOD_NAME);
-        entry = hash_table_valid[entry_num];
-        item = entry.head_list;
-
-        while(item!=NULL)
-        {
-            printk("%s: Blocco #%lld\n", MOD_NAME, item->block_index);
-            item = item ->hash_table_next;
-        }
-
-        printk("%s: ---------------------------------------------------------------------------------", MOD_NAME);
-        
-    }
-
-    printk("%s: -------------------------- FINE HASH TABLE --------------------------------------------------\n", MOD_NAME);
-}
-
-
-
-/*
- * Inizializza le tre strutture dati core del modulo.
- */
-static int init_data_structure_core(uint64_t num_data_block)
-{
-    int x;
-    uint64_t index;
-    size_t size_ht;
-    struct buffer_head *bh = NULL;
-    struct soafs_block *data_block = NULL;
-
-    /* 
-     * Check sul valore del superblocco 
-     * poiché dovrà essere utilizzato per
-     * l'inizializzazione delle strutture dati.
-     */
-    if(sb_global == NULL)
-    {
-        printk("%s: Il contenuto del superblocco non è valido. Impossibile inizializzare le strutture dati core.\n", MOD_NAME);
-        return 1;
-    }
-
-    /* Deve esistere almeno un blocco dati. */
-    if(num_data_block <= 0)
-    {
-        printk("%s: Il numero di blocchi del device non è valido. Impossibile inizializzare le strutture dati core.\n", MOD_NAME);
-        return 1;
-    }
-
-    /*
-     * Computo il numero delle entry X della
-     * tabella hash per determinare la quantità
-     * di memoria da allocare necessaria.
-     */
-
-    x = compute_num_rows(num_data_block);
-
-    size_ht = x * sizeof(struct ht_valid_entry);
-
-    hash_table_valid = (struct ht_valid_entry *)kmalloc(size_ht, GFP_KERNEL);
-
-    if(hash_table_valid == NULL)
-    {
-        printk("%s: Errore malloc() nell'allocazione della memoria per la tabella hash.\n", MOD_NAME);
-        return 1;
-    } 
-
-    printk("%s: Il numero di liste nella tabella hash è pari a %d\n", MOD_NAME, x);
-
-    /* Inizialmente le liste della tabella hash sono vuote. */
-    for(index=0;index<x;index++)
-    {
-        (&hash_table_valid[index])->head_list = NULL;
-    }
-
-    /*
-     * Eseguo la lettura dei blocchi dal device per
-     * inizializzare le strutture dati. Se il blocco
-     * su cui sto iterando ha un contenuto valido
-     * allora dovrò aggiungere le relative informazioni
-     * all'interno delle strutture dati 'hash_table_valid'
-     * e 'head_sorted_list'; altrimenti, dovrò aggiungere
-     * le informazioni sul blocco all'interno della lista
-     * 'head_free_block_list'.
-     */
-    for(index=0; index<num_data_block; index++)
-    {
-
-        /* Leggo il blocco di dati dal device */
-        bh = sb_bread(sb_global, NUM_NODATA_BLOCK + index);                   
-
-        if(bh == NULL)
-        {
-            printk("%s: Errore esecuzione della sb_bread() per la lettura del blocco di dati con indice %lld...\n", MOD_NAME, index);
-            return 1;
-        }
-
-        data_block = (struct soafs_block *)bh->b_data;
-
-        /* Faccio un check sulla validità del blocco di dati. */
-
-        if(data_block->metadata & MASK_VALID)
-        {
-            printk("%s: Il blocco di dati con indice %lld è valido e nella lista ordinata si trova in posizione %lld.\n", MOD_NAME, index, (data_block->metadata & MASK_POS) );
-            insert_hash_table_valid(data_block, data_block->metadata & MASK_POS, index, x);
-        }
-        else
-        {
-            printk("%s: Il blocco di dati con indice %lld non è valido e nella lista ordinata si trova in posizione %lld.\n", MOD_NAME, index, (data_block->metadata & MASK_POS) );
-            insert_free_list(index);
-        }
-
-        /* Rilascio il buffer poiché non ho più bisogno dei dati. */
-        brelse(bh);
-    }
-
-    /* scansione della lista contenente le informazioni dei blocchi liberi. */
-    scan_free_list();
-
-    /* scansione della lista contenente i blocchi ordinati per inserimento. */
-    scan_sorted_list();
-
-    /* scansione delle liste della hash table */
-    scan_hash_table(x);
-
-    return 0;
-}
-
-
-
 static int soafs_fill_super(struct super_block *sb, void *data, int silent) {   
 
     struct inode *root_inode;
@@ -432,7 +51,7 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     struct soafs_super_block *sb_disk;
     struct timespec64 curr_time;
     struct buffer_head *bh;
-    uint64_t num_block = -1;
+    struct soafs_sb_info *sbi; 
     int ret;
 
     
@@ -458,22 +77,17 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     /* Recupero il superblocco memorizzato sul device. */
     sb_disk = (struct soafs_super_block *)bh->b_data;  
 
-    /* Faccio il check per verificare se il numero di blocchi nel dispositivo è valido */
-    num_block = sb_disk->num_block;
-
-    if( (num_block > NBLOCKS) || ((num_block - NUM_NODATA_BLOCK) <= 0) )
+    /* Faccio il check per verificare se il numero di blocchi nel dispositivo è valido. */
+    if( (sb_disk->num_block > NBLOCKS) || ((sb_disk->num_block - sb_disk->num_block_state - 2) <= 0) )
     {
         printk("%s: Il numero di blocchi del dispositivo non è valido.\n", MOD_NAME);
         brelse(bh);
         return -EINVAL;
     }
 
-    printk("%s: Il numero di blocchi del dispositivo è pari a %lld.\n", MOD_NAME, num_block);
-
     /* Verifico il valore del magic number presente nel superblocco sul device. */
     if(sb_disk->magic != SOAFS_MAGIC_NUMBER){
         printk("%s: Mancata corrispondenza tra i due magic number.\n", MOD_NAME);
-        /* Rilascio il buffer cache che mantiene il superblocco. */
         brelse(bh);
 	    return -EBADF;
     }
@@ -482,17 +96,26 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     sb->s_magic = SOAFS_MAGIC_NUMBER;
     sb->s_op = &soafs_super_ops;
 
-    /* I dati specifici del File System sono stati già riportati nel superblocco generico. */
-    sb->s_fs_info = NULL;
+    /* Recupero informazioni FS specific. */
+    sbi = (struct soafs_sb_info *)kzalloc(sizeof(struct soafs_sb_info), GFP_KERNEL);
 
-    //TODO: Decommenta il codice se si necessita di dati specifici del superblocco del FS.
-    /* sbi = kzalloc(sizeof(struct minfs_sb_info), GFP_KERNEL);
-	if (!sbi)
+    if(sbi == NULL)
     {
-		return -ENOMEM;
+        printk("%s: Errore kzalloc() nell'allocazione della struttura dati soafs_sb_info.\n", MOD_NAME);
+        brelse(bh);
+        return -ENOMEM;
     }
-	s->s_fs_info = sbi */
 
+    sbi->num_block = sb_disk->num_block;
+    sbi->num_block_free = sb_disk->num_block_free;
+    sbi->num_block_state = sb_disk->num_block_state;
+
+    sb->s_fs_info = sbi;
+
+    printk("%s: Il numero di blocchi del dispositivo è pari a %lld.\n", MOD_NAME, sb_disk->num_block);
+    printk("%s: Il numero di blocchi liberi del dispositivo è pari a %lld.\n", MOD_NAME, sb_disk->num_block_free);
+    printk("%s: Il numero di blocchi di stato del dispositivo è pari a %lld.\n", MOD_NAME, sb_disk->num_block_state);
+    
     /* Recupero il root inode. */
     root_inode = iget_locked(sb, 0);
 
@@ -500,6 +123,7 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     {
         printk("%s: Errore nel recupero del root inode.\n", MOD_NAME);
         brelse(bh);
+        kfree(sbi);
         return -ENOMEM;
     }
 
@@ -509,11 +133,7 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     root_inode->i_mode = S_IFDIR | S_IRUSR | S_IRGRP | S_IROTH | S_IWUSR | S_IWGRP | S_IXUSR | S_IXGRP | S_IXOTH;
     ktime_get_real_ts64(&curr_time);
     root_inode->i_atime = root_inode->i_mtime = root_inode->i_ctime = curr_time;
-
-    //TODO: Vedi se necessita delle informazioni, non è necessariamente l'inode della root.
     root_inode->i_private = NULL;
-
-    //TODO: Vedi se bisogna implementare specifiche operazioni.
     root_inode->i_op = &soafs_inode_ops;
     root_inode->i_fop = &soafs_dir_operations;
 
@@ -524,6 +144,7 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     {
         printk("%s: Errore nella creazione della root directory.\n", MOD_NAME);
         brelse(bh);
+        kfree(sbi);
         return -ENOMEM;
     }
 
@@ -531,23 +152,22 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     sb->s_root->d_op = &soafs_dentry_ops;
 
     unlock_new_inode(root_inode);
-    
-    brelse(bh);
 
+    /* Prendo il riferimento al superblocco */
     sb_global = sb;
 
-    /* 
-     * Devo escludere i due blocchi contenenti rispettivamente
-     * il superblocco e l'inode del file. Alla funzione passo
-     * il numero dei soli blocchi di dati.
-     */
-    ret = init_data_structure_core(num_block - 2);
+    ret = init_data_structure_core(sb_disk->num_block - sb_disk->num_block_state - 2, sb_disk->index_free, sb_disk->actual_size);
 
     if(ret)
     {
         printk("%s: Errore nella inizializzazione delle strutture dati core del modulo.\n", MOD_NAME);
-        return -ENOMEM;
+        brelse(bh);
+        kfree(sbi);
+        return -EIO;
     }
+
+    /* Rilascio del superblocco */
+    brelse(bh);
 
     return 0;
 }
@@ -596,10 +216,6 @@ static struct dentry *soafs_mount(struct file_system_type *fs_type, int flags, c
 
 
 
-/*
- * Descrizione della tipologia di File System
- * memorizzato all'interno del dispositivo a blocchi.
- */
 struct file_system_type soafs_fs_type = {
 	.owner          = THIS_MODULE,
     .name           = "soafs",

@@ -4,6 +4,7 @@
 #define MAIN_HEADER_H
 
 #include "./file_system.h"
+#include "./data_structure_core.h"
 
 /* Nome del modulo */
 #define MOD_NAME "SOA-22-23"

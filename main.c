@@ -64,18 +64,18 @@ static int check_size(size_t size)
  * mantenere il messaggio utente. Gli eventuali
  * altri bytes vengono utilizzati per mantenere i
  * metadati.
- */
+ *
 static int get_available_data(void)
 {
     return SOAFS_BLOCK_SIZE - METADATA;
-}
+}*/
 
 
-
+/*
 static int get_metadata(void)
 {
     return METADATA;
-}
+}*/
 
 
 
@@ -126,13 +126,15 @@ asmlinkage int sys_get_data(int offset, char * destination, size_t size){
 
     //TODO: gestisce gli eventuali metadati.
 
-    msg_block = msg_block + get_metadata();
+    //msg_block = msg_block + get_metadata();
+    msg_block = msg_block;
 
     str_len = strlen(msg_block);                    /* Non tiene conto del terminatore di stringa */
 
     printk("%s: il messaggio letto dal blocco del device è '%s' ed ha una dimensione di %d\n", MOD_NAME, msg_block, str_len);
 
-    available_data = get_available_data();          /* La dimensione massima del messsaggio che può essere mantenuto nei blocchi del device */
+    //available_data = get_available_data();          /* La dimensione massima del messsaggio che può essere mantenuto nei blocchi del device */
+    available_data = 0;
 
     if(size > available_data)
     {
@@ -212,7 +214,8 @@ asmlinkage int sys_put_data(char * source, size_t size){
         return -EINVAL;
     }
 
-    available_data = get_available_data();        /* La dimensione massima del messsaggio che può essere mantenuto nei blocchi del device */
+    //available_data = get_available_data();        /* La dimensione massima del messsaggio che può essere mantenuto nei blocchi del device */
+    available_data = 0;
 
     if(size > available_data)
     {
