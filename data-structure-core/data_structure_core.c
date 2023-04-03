@@ -339,7 +339,8 @@ void check_consistenza(void)
     struct block_free *bf;
     int bitmask_entry;
     int array_entry;
-    int offset;
+    uint64_t offset;
+    uint64_t base = 1;
 
     bf = head_free_block_list;
 
@@ -351,11 +352,11 @@ void check_consistenza(void)
         bitmask_entry = bf->block_index / (SOAFS_BLOCK_SIZE << 3);
 
         // Determino la entry dell'array */
-        array_entry = (bf->block_index  % (SOAFS_BLOCK_SIZE << 3)) / sizeof(uint64_t);
+        array_entry = (bf->block_index  % (SOAFS_BLOCK_SIZE << 3)) / (sizeof(uint64_t) * 8);
 
-        offset = bf->block_index % sizeof(uint64_t);
+        offset = bf->block_index % (sizeof(uint64_t) * 8);
 
-        if(bitmask[bitmask_entry][array_entry] & (1 << offset))
+        if(bitmask[bitmask_entry][array_entry] & (base << offset))
         {
             printk("%s: Errore inconsistenza per l'indice %lld.\n", MOD_NAME, bf->block_index);
         }
@@ -519,9 +520,14 @@ int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint
             kfree(hash_table_valid);
             return 1;
         }
-    }else
+    }else if(sbi->num_block_free == 0)
     {
         head_free_block_list = NULL;
+    }else
+    {
+        printk("%s: Errore nella struttura del device.\n", MOD_NAME);
+        kfree(hash_table_valid);
+        return 1;
     }
 
     debugging_init(x);

@@ -120,18 +120,10 @@ int main(int argc, char *argv[])
     /* Dimensione effettiva dell'array */
     sb.actual_size = actual_size;
 
-    sb.index_free = (uint64_t *)malloc(actual_size * sizeof(uint64_t));
-
-    if(sb.index_free == NULL)
-    {
-        printf("Errore allocazione malloc array.\n");
-        return -1;
-    }
-
     sb.index_free[0] = 0;
-    sb.index_free[1] = 1;
-    sb.index_free[2] = 2;
-    sb.index_free[3] = 3;    
+    sb.index_free[1] = 64;
+    //sb.index_free[1] = 65; 
+    //sb.index_free[1] = 165;   
 
 	ret = write(fd, (char *)&sb, sizeof(sb));
 
@@ -209,7 +201,10 @@ int main(int argc, char *argv[])
 
         for(j=0;j<512;j++)
         {
-            block_state[j]= 0;
+            if(j == 0 || j == 1 || j == 67 || j == 89 || j == 90)
+                block_state[j]= 0xfffffffffffffffe;
+            else
+                block_state[j]= 0xffffffffffffffff;
         }
 
 	    ret = write(fd, (void *)block_state, SOAFS_BLOCK_SIZE);
