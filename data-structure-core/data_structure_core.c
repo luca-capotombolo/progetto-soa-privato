@@ -101,130 +101,6 @@ void debugging_init(int x)
 
 
 /*
- * Inserisce un nuovo elemento all'interno della
- * lista contenente i blocchi ordinati secondo
- * l'ordine di consegna. L'elemento non deve essere
- * nuovamente allocato ma si collega l'elemento che 
- * è stato precedentemente allocato.
- * Il campo 'pos' rappresenta la posizione del blocco
- * nella lista ordinata e viene sfruttato per determinare
- * la corretta posizione all'interno della lista.
- */
-void insert_sorted_list(struct block *block)
-{
-    struct block *prev;
-    struct block *curr;
-
-    if(head_sorted_list == NULL)
-    {
-        /* La lista è vuota */
-        head_sorted_list = block;
-        block->sorted_list_next = NULL;
-    }
-    else
-    {
-        if( (head_sorted_list->pos) > (block->pos) )
-        {
-            /* Inserimento in testa */
-            block->sorted_list_next = head_sorted_list;
-            head_sorted_list = block;
-        }
-        else
-        {
-            /* Cerco la posizione per inserire il nuovo elemento */
-            prev = head_sorted_list;
-            curr = head_sorted_list->sorted_list_next;
-
-            while(curr!=NULL)
-            {
-                if((curr->pos) > (block->pos))
-                {
-                    break;
-                }
-                prev = curr;
-                curr = curr->sorted_list_next;
-            }
-            
-            block->sorted_list_next = curr;
-            prev -> sorted_list_next = block;        
-        }   
-    }
-}
-
-
-
-
-/*
- * Inserisce un nuovo elemento all'interno della lista
- * identificata dal parametro 'x'.
- */
-int insert_hash_table_valid(struct soafs_block *data_block, uint64_t pos, uint64_t index, int x)
-{
-    int num_entry_ht;
-    struct block *new_item;
-    struct block *old_head;
-    struct ht_valid_entry *ht_entry; 
-
-    /* Identifico la lista corretta nella hash table per effettuare l'inserimento */
-    num_entry_ht = index % x;
-    ht_entry = &(hash_table_valid[num_entry_ht]);
-
-    /* Alloco il nuovo elemento da inserire nella lista */
-    new_item = (struct block *)kmalloc(sizeof(struct block), GFP_KERNEL);
-    
-    if(new_item == NULL)
-    {
-        printk("%s: Errore malloc() nell'allocazione del nuovo elemento da inserire nella hash table.", MOD_NAME);
-        return 1;
-    }
-
-    /* Inizializzo il nuovo elemento */
-    new_item->block_index = index;
-
-    new_item->pos = pos;
-
-    new_item->msg = (char *)kmalloc(strlen(data_block->msg) + 1, GFP_KERNEL);
-
-    if(new_item->msg == NULL)
-    {
-        printk("%s: Errore malloc() nell'allocazione della memoria per il messaggio dell'elemento da inserire nella hash table.", MOD_NAME);
-        return 1;
-    }
-
-    printk("%s: Stringa da copiare per il blocco con indice %lld - %s.\n", MOD_NAME, index, data_block->msg);
-
-    strncpy(new_item->msg, data_block->msg, strlen(data_block->msg) + 1);
-
-    printk("Lunghezza della stringa copiata %ld - Dimensione del buffer allocato %ld.\n", strlen(data_block->msg) + 1, strlen(new_item->msg) + 1);
-
-    /* Inserimento in testa */
-    if(ht_entry->head_list == NULL)
-    {
-        /* La lista è vuota */
-        ht_entry->head_list = new_item;
-        ht_entry->head_list->hash_table_next = NULL;
-    }
-    else
-    {
-        old_head = ht_entry->head_list;
-        ht_entry->head_list = new_item;
-        new_item->hash_table_next = old_head;
-    }
-
-    printk("%s: Inserimento blocco %lld nella entry #%d completato con successo.\n", MOD_NAME, index, num_entry_ht);
-
-    /* Inserimento del blocco nella lista ordinata */
-    insert_sorted_list(new_item);
-
-    asm volatile("mfence");
-
-    return 0;   
-    
-}
-
-
-
-/*
  * Computa il numero di righe della tabella hash
  * applicando la formula. Si cerca di avere un numero
  * logaritmico di elementi per ogni lista della
@@ -269,10 +145,21 @@ int init_bitmask(void)
     uint64_t * block_state;
     int sub_index;
 
-    /* Recupero le informazioni specifiche */
+    /* 
+     * Recupero le informazioni specifiche 
+     * necessarie per identificare dove nel
+     * device sono presenti i blocchi di stato
+     */
+
     sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
 
     num_block_state = sbi->num_block_state;
+
+    if(num_block_state <= 0)
+    {
+        printk("%s: Numero dei blocchi di stato non è valido.\n", MOD_NAME);
+        return 1;
+    }
 
     printk("%s: Inizio inizializzazione bitmask...\nNumero entry pari a %lld\n", MOD_NAME, num_block_state);
 
@@ -284,10 +171,11 @@ int init_bitmask(void)
         return 1;
     }
 
+
+    /* [SB][Inode][SB1]...[SBn][DB]...[DB] */
     for(index=0;index<num_block_state;index++)
     {
-
-        /* [SB][Inode][SB1]...[SBn][DB]...[DB] */
+        /* Recupero i bit di stato dal device */
         bh = sb_bread(sb_global, index + 2);
 
         if(bh == NULL)
@@ -301,6 +189,7 @@ int init_bitmask(void)
 	        return 1;
         }
 
+        /* 512 * 8 = 4096 BYTE */
         bitmask[index] = (uint64_t *)kzalloc(sizeof(uint64_t) * 512, GFP_KERNEL);
 
         if(bitmask[index] == NULL)
@@ -323,7 +212,7 @@ int init_bitmask(void)
 
         brelse(bh);
 
-        printk("%s: Inizializzazione blocco bitmask #%lld completata con successo.\n", MOD_NAME, index);
+        printk("%s: Inizializzazione blocco bitmask #%lld è stata completata con successo.\n", MOD_NAME, index);
     }
 
     printk("%s: Inizializzazione bitmask completata con successo.\n", MOD_NAME);
@@ -340,7 +229,9 @@ void check_consistenza(void)
     int bitmask_entry;
     int array_entry;
     uint64_t offset;
-    uint64_t base = 1;
+    uint64_t base;
+
+    base = 1;
 
     bf = head_free_block_list;
 
@@ -455,6 +346,242 @@ int init_free_block_list(uint64_t *index_free, uint64_t actual_size)
 }
 
 
+int check_bit(uint64_t index)
+{
+    uint64_t base;
+    uint64_t offset;
+    int bitmask_entry;
+    int array_entry;
+    int bits;
+
+    bits = sizeof(uint64_t) * 8;
+    base = 1;
+
+    /* 
+     * Determino il blocco di stato che contiene
+     * l'informazione relativa al blocco che sto
+     * richiedendo (i.e., l'array di uint64_t).
+     */
+    bitmask_entry = index / (SOAFS_BLOCK_SIZE << 3);
+
+    /* Determino la entry dell'array */
+    array_entry = (index  % (SOAFS_BLOCK_SIZE << 3)) / bits;
+
+    /* Determino l'offset nella entry dell'array */
+    offset = index % bits;
+
+    if(bitmask[bitmask_entry][array_entry] & (base << offset))
+    {
+        printk("%s: Il blocco di dati ad offset %lld è valido.\n", MOD_NAME, index);
+        return 1;
+    }
+
+    printk("%s: Il blocco di dati ad offset %lld non è valido.\n", MOD_NAME, index);
+    
+    return 0;
+}
+
+
+
+
+/*
+ * Inserisce un nuovo elemento all'interno della
+ * lista contenente i blocchi ordinati secondo
+ * l'ordine di consegna. L'elemento non deve essere
+ * nuovamente allocato ma si collega l'elemento che 
+ * è stato precedentemente allocato.
+ * Il campo 'pos' rappresenta la posizione del blocco
+ * nella lista ordinata e viene sfruttato per determinare
+ * la corretta posizione all'interno della lista.
+ */
+void insert_sorted_list(struct block *block)
+{
+    struct block *prev;
+    struct block *curr;
+
+    if(head_sorted_list == NULL)
+    {
+        /* La lista è vuota */
+        head_sorted_list = block;
+        block->sorted_list_next = NULL;
+    }
+    else
+    {
+        if( (head_sorted_list->pos) > (block->pos) )
+        {
+            /* Inserimento in testa */
+            block->sorted_list_next = head_sorted_list;
+            head_sorted_list = block;
+        }
+        else
+        {
+            /* Cerco la posizione per inserire il nuovo elemento */
+
+            /* L'elemento che dovrà precedere il nuovo item */
+            prev = head_sorted_list;
+
+            /* L'elemento che dovrà seguire il nuovo item */
+            curr = head_sorted_list->sorted_list_next;
+
+            while(curr!=NULL)
+            {
+                if((curr->pos) > (block->pos))
+                {
+                    break;
+                }
+                prev = curr;
+                curr = curr->sorted_list_next;
+            }
+            
+            block->sorted_list_next = curr;
+            prev -> sorted_list_next = block;        
+        }   
+    }
+}
+
+
+
+
+/*
+ * Inserisce un nuovo elemento all'interno della lista
+ * identificata dal parametro 'x'.
+ */
+int insert_hash_table_valid_and_sorted_list(struct soafs_block *data_block, uint64_t pos, uint64_t index, int x)
+{
+    int num_entry_ht;
+    size_t len;
+    struct block *new_item;
+    struct block *old_head;
+    struct ht_valid_entry *ht_entry; 
+
+    /* Identifico la lista corretta nella hash table per effettuare l'inserimento */
+    num_entry_ht = index % x;
+    ht_entry = &(hash_table_valid[num_entry_ht]);
+
+    /* Alloco il nuovo elemento da inserire nella lista */
+    new_item = (struct block *)kmalloc(sizeof(struct block), GFP_KERNEL);
+    
+    if(new_item == NULL)
+    {
+        printk("%s: Errore malloc() nell'allocazione del nuovo elemento da inserire nella hash table.", MOD_NAME);
+        return 1;
+    }
+
+    /* Inizializzo il nuovo elemento */
+    new_item->block_index = index;
+
+    new_item->pos = pos;
+
+    len = strlen(data_block->msg) + 1;
+
+    new_item->msg = (char *)kmalloc(len, GFP_KERNEL);
+
+    if(new_item->msg == NULL)
+    {
+        printk("%s: Errore malloc() nell'allocazione della memoria per il messaggio dell'elemento da inserire nella hash table.", MOD_NAME);
+        return 1;
+    }
+
+    printk("%s: Stringa da copiare per il blocco con indice %lld - %s.\n", MOD_NAME, index, data_block->msg);
+
+    strncpy(new_item->msg, data_block->msg, len);
+
+    printk("Lunghezza della stringa copiata %ld - Dimensione del buffer allocato %ld.\n", strlen(data_block->msg) + 1, strlen(new_item->msg) + 1);
+
+    /* Inserimento in testa */
+    if(ht_entry->head_list == NULL)
+    {
+        /* La lista è vuota */
+        ht_entry->head_list = new_item;
+        ht_entry->head_list->hash_table_next = NULL;
+    }
+    else
+    {
+        old_head = ht_entry->head_list;
+        ht_entry->head_list = new_item;
+        new_item->hash_table_next = old_head;
+    }
+
+    printk("%s: Inserimento blocco %lld nella entry #%d completato con successo.\n", MOD_NAME, index, num_entry_ht);
+
+    /* Inserimento del blocco nella lista ordinata */
+    insert_sorted_list(new_item);
+
+    asm volatile("mfence");
+
+    return 0;   
+    
+}
+
+
+
+
+int init_ht_valid_and_sorted_list(uint64_t num_data_block, int x)
+{
+    uint64_t index;
+    int isValid;
+    int ret;
+    struct buffer_head *bh;
+    struct soafs_block *data_block;
+    struct soafs_sb_info *sbi;
+
+    sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
+
+    if(sbi->num_block_free > sbi->num_block)
+    {
+        printk("%s: Numero di blocchi liberi maggiore del numero dei blocchi totale\n", MOD_NAME);
+        return 1;
+    }
+    
+    if(sbi->num_block_free == sbi->num_block)
+    {
+        printk("%s: Non ci sono blocchi validi\n", MOD_NAME);
+        tail_sorted_list = NULL;
+        head_sorted_list = NULL;
+        return 0;
+    }
+
+    bh = NULL;
+    data_block = NULL;
+
+    for(index=0; index<num_data_block; index++)
+    {
+        /* Verifico se il blocco è valido */
+        isValid = check_bit(index);
+
+        if(!isValid)
+        {
+            continue;
+        }
+
+        bh = sb_bread(sb_global, 2 + sbi->num_block_state + index);                   
+
+        if(bh == NULL)
+        {
+            printk("%s: Errore esecuzione della sb_bread() per la lettura del blocco di dati con indice %lld...\n", MOD_NAME, index);
+            return 1;
+        }
+
+        data_block = (struct soafs_block *)bh->b_data;
+
+        ret = insert_hash_table_valid_and_sorted_list(data_block, data_block->pos, index, x);
+
+        if(ret)
+        {
+            printk("%s: Errore inserimento nella HT del blocco con indice %lld.\n", MOD_NAME, index);
+            return 1;
+        }
+
+        printk("%s: Il blocco di dati con indice %lld è valido e nella lista ordinata si trova in posizione %lld.\n", MOD_NAME, index, data_block->pos);
+
+        brelse(bh);        
+        
+    }
+
+    return 0;
+}
+
+
 
 int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint64_t actual_size)
 {
@@ -476,6 +603,52 @@ int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint
         return 1;
     }
 
+    /* Inizializzo la bitmask */
+    ret = init_bitmask();
+
+    if(ret)
+    {
+        printk("%s: Errore inizializzazione bitmask, non è possibile completare l'inizializzazione core.\n", MOD_NAME);
+        // kfree(hash_table_valid);
+        return 1;
+    }
+
+    sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
+
+    if( (actual_size < 0) || (sbi->num_block_free < 0) )
+    {
+        printk("%s: Le informazioni sui blocchi liberi non sono valide.\n", MOD_NAME);
+        return 1;
+    }
+
+    if( (actual_size > 0) && (sbi->num_block_free == 0) )
+    {
+        printk("%s: Problema di inconsistenza tra il numero dei blocchi liberi e la dimensione dell'array.\n", MOD_NAME);
+        return 1;
+    }
+
+
+    /* Inizializzo la free_block_list */
+
+    if(actual_size > 0)
+    {
+        ret = init_free_block_list(index_free, actual_size);
+        if(ret)
+        {
+            printk("%s: Errore inizializzazione free_block_list, non è possibile completare l'inizializzazione core.\n", MOD_NAME);
+            // kfree(hash_table_valid);
+            // kfree(bitmask);
+            return 1;
+        }
+
+    }else
+    {
+        head_free_block_list = NULL;
+    }
+
+
+    /* Inizializzazione HT e sorted_list */
+
     x = compute_num_rows(num_data_block);
 
     size_ht = x * sizeof(struct ht_valid_entry);
@@ -486,47 +659,21 @@ int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint
     {
         printk("%s: Errore esecuzione kmalloc() nell'allocazione della memoria per la tabella hash.\n", MOD_NAME);
         return 1;
-    } 
+    }
 
-    /* Inizialmente le liste della tabella hash sono vuote. */
+    printk("%s: Il numero di liste nella tabella hash è pari a %d\n", MOD_NAME, x);
+
     for(index=0;index<x;index++)
     {
         (&hash_table_valid[index])->head_list = NULL;
     }
-
-    /* Inizialmente la lista ordinata è vuota */
-    head_sorted_list = NULL;
-    tail_sorted_list = NULL;
-
-    /* Inizializzo la bitmask */
-    ret = init_bitmask();
+    
+    ret = init_ht_valid_and_sorted_list(num_data_block, x);
 
     if(ret)
     {
-        printk("%s: Errore inizializzazione bitmask, non è possibile completare l'inizializzazione core.\n", MOD_NAME);
-        kfree(hash_table_valid);
-        return 1;
-    }
-
-    sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
-
-    /* Inizializzo la free_block_list */
-    if(sbi->num_block_free > 0)
-    {
-        ret = init_free_block_list(index_free, actual_size);
-        if(ret)
-        {
-            printk("%s: Errore inizializzazione free_block_list, non è possibile completare l'inizializzazione core.\n", MOD_NAME);
-            kfree(hash_table_valid);
-            return 1;
-        }
-    }else if(sbi->num_block_free == 0)
-    {
-        head_free_block_list = NULL;
-    }else
-    {
-        printk("%s: Errore nella struttura del device.\n", MOD_NAME);
-        kfree(hash_table_valid);
+        printk("%s: Errore inizializzazione HT e sorted_list\n", MOD_NAME);
+        // fai le kfree
         return 1;
     }
 

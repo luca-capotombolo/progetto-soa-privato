@@ -120,8 +120,9 @@ int main(int argc, char *argv[])
     /* Dimensione effettiva dell'array */
     sb.actual_size = actual_size;
 
-    sb.index_free[0] = 0;
-    sb.index_free[1] = 64;
+    /* inserisci i primi actual_size blocchi liberi */
+    sb.index_free[0] = 4;
+    sb.index_free[1] = 67;
     //sb.index_free[1] = 65; 
     //sb.index_free[1] = 165;   
 
@@ -201,10 +202,12 @@ int main(int argc, char *argv[])
 
         for(j=0;j<512;j++)
         {
-            if(j == 0 || j == 1 || j == 67 || j == 89 || j == 90)
-                block_state[j]= 0xfffffffffffffffe;
+            if(j == 0 || j == 1 || j == 2 || j == 3 || j == 4)
+                // block_state[j]= 0xfffffffffffffffe;
+                block_state[j] = 0x0000000000000001;
             else
-                block_state[j]= 0xffffffffffffffff;
+                // block_state[j]= 0xffffffffffffffff;
+                block_state[j] = 0x0000000000000000;
         }
 
 	    ret = write(fd, (void *)block_state, SOAFS_BLOCK_SIZE);
@@ -231,7 +234,7 @@ int main(int argc, char *argv[])
 
         memset(block, 0, sizeof(struct soafs_block));
 
-        block->metadata = metadata;
+        block->pos = metadata;
 
         metadata += 1;
         

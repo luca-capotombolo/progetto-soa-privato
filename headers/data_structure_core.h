@@ -15,7 +15,7 @@
  */
 struct block {
     uint64_t block_index;   //
-    uint64_t pos;
+    uint64_t pos;           
     char *msg;      //
     struct block* hash_table_next;  //
     struct block* sorted_list_next; //
