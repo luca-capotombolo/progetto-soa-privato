@@ -12,7 +12,8 @@ struct block_free *head_free_block_list = NULL;                 /* Puntatore all
 struct ht_valid_entry *hash_table_valid = NULL;                 /* Hash table */
 uint64_t num_block_free_used = 0;
 uint64_t pos = 0;
-uint64_t**bitmask = NULL; 
+uint64_t**bitmask = NULL;
+int x = 0;
 
 
 
@@ -57,7 +58,7 @@ void scan_sorted_list(void)
 
 
 
-void scan_hash_table(int x)
+void scan_hash_table(void)
 {
     int entry_num;
     struct ht_valid_entry entry;
@@ -86,7 +87,7 @@ void scan_hash_table(int x)
 
 
 
-void debugging_init(int x)
+void debugging_init(void)
 {
     /* scansione della lista contenente le informazioni dei blocchi liberi. */
     scan_free_list();
@@ -95,7 +96,7 @@ void debugging_init(int x)
     scan_sorted_list();
 
     /* scansione delle liste della hash table */
-    scan_hash_table(x);
+    scan_hash_table();
 }
 
 
@@ -106,31 +107,32 @@ void debugging_init(int x)
  * logaritmico di elementi per ogni lista della
  * hast_table_valid.
  */
-int compute_num_rows(uint64_t num_data_block)
+void compute_num_rows(uint64_t num_data_block)
 {
-    int x;
+    // int x;
     int list_len;
     
     if(num_data_block == 1)
     {
-        return 1;      /* Non devo applicare la formula e ho solamente una lista */
-    }
- 
-    list_len = ilog2(num_data_block) + 1;    /* Computo il numero di elementi massimo che posso avere in una lista */
-
-    if((num_data_block % list_len) == 0)
-    {
-        x = num_data_block / list_len;
+        x = 1;      /* Non devo applicare la formula e ho solamente una lista */
     }
     else
     {
-        x = (num_data_block / list_len) + 1;
+ 
+        list_len = ilog2(num_data_block) + 1;    /* Computo il numero di elementi massimo che posso avere in una lista */
+
+        if((num_data_block % list_len) == 0)
+        {
+            x = num_data_block / list_len;
+        }
+        else
+        {
+            x = (num_data_block / list_len) + 1;
+        }
     }
 
     printk("%s: La lunghezza massima di una entry della tabella hash è pari a %d.\n", MOD_NAME, list_len);
     printk("%s: Il numero di entry nella tabella hash è pari a %d.\n", MOD_NAME, x);
-    
-    return x;
 }
 
 
@@ -446,7 +448,7 @@ void insert_sorted_list(struct block *block)
  * Inserisce un nuovo elemento all'interno della lista
  * identificata dal parametro 'x'.
  */
-int insert_hash_table_valid_and_sorted_list(struct soafs_block *data_block, uint64_t pos, uint64_t index, int x)
+int insert_hash_table_valid_and_sorted_list(struct soafs_block *data_block, uint64_t pos, uint64_t index)
 {
     int num_entry_ht;
     size_t len;
@@ -516,7 +518,7 @@ int insert_hash_table_valid_and_sorted_list(struct soafs_block *data_block, uint
 
 
 
-int init_ht_valid_and_sorted_list(uint64_t num_data_block, int x)
+int init_ht_valid_and_sorted_list(uint64_t num_data_block)
 {
     uint64_t index;
     int isValid;
@@ -564,7 +566,7 @@ int init_ht_valid_and_sorted_list(uint64_t num_data_block, int x)
 
         data_block = (struct soafs_block *)bh->b_data;
 
-        ret = insert_hash_table_valid_and_sorted_list(data_block, data_block->pos, index, x);
+        ret = insert_hash_table_valid_and_sorted_list(data_block, data_block->pos, index);
 
         if(ret)
         {
@@ -585,7 +587,7 @@ int init_ht_valid_and_sorted_list(uint64_t num_data_block, int x)
 
 int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint64_t actual_size)
 {
-    int x;                              // Numero di entry della tabella hash
+    // int x;                              // Numero di entry della tabella hash
     int ret;
     uint64_t index;
     size_t size_ht;
@@ -649,7 +651,7 @@ int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint
 
     /* Inizializzazione HT e sorted_list */
 
-    x = compute_num_rows(num_data_block);
+    compute_num_rows(num_data_block);
 
     size_ht = x * sizeof(struct ht_valid_entry);
 
@@ -668,7 +670,7 @@ int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint
         (&hash_table_valid[index])->head_list = NULL;
     }
     
-    ret = init_ht_valid_and_sorted_list(num_data_block, x);
+    ret = init_ht_valid_and_sorted_list(num_data_block);
 
     if(ret)
     {
@@ -677,7 +679,7 @@ int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint
         return 1;
     }
 
-    debugging_init(x);
+    debugging_init();
 
     return 0;
 }

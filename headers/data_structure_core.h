@@ -55,8 +55,10 @@ extern struct block *tail_sorted_list;                          /* Puntatore all
 extern struct block_free *head_free_block_list;                 /* Puntatore alla testa della lista contenente i blocchi liberi. */
 extern struct ht_valid_entry *hash_table_valid;                 /* Hash table */
 extern uint64_t **bitmask;
+extern int x;
 
-extern int compute_num_rows(uint64_t num_data_block);
+extern void compute_num_rows(uint64_t num_data_block);
 extern int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint64_t actual_size);
+extern int check_bit(uint64_t index);
 
 #endif //data_structure_core.h

@@ -18,6 +18,13 @@ int main(int argc, char** argv){
     const char * str2 = "Proviamo con il secondo tentativo... dovrebbe andare tutto bene.";
     const char * str3 = "Blocco #0.";
     char *msg;
+
+    msg = (char *)malloc(4000);
+
+    ret = syscall(156,650, msg, 4000);
+
+    printf("Valore di ritorno della system call - %ld\n", ret);
+    printf("Messaggio letto - %s\n", msg);
 /*
     msg = (char *)malloc(4000);
     memset(msg,0,4000);
@@ -77,9 +84,9 @@ int main(int argc, char** argv){
 	syscall(156,1, msg, 4000);
     printf("Blocco dati #1: %s\n", msg);
     memset(msg,0,4000);
-*/
+
   syscall(177,2049);
-/*
+
 	if(argc != 2)
 	{
 		printf("./user filename\n");

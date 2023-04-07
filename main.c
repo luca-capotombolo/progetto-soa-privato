@@ -9,6 +9,7 @@
 #include <linux/buffer_head.h>      /* sb_bread()       */
 #include <linux/log2.h>             /* ilog2()  */
 #include "lib/include/scth.h"
+#include <linux/string.h>       /* strncpy() */
 #include "./headers/main_header.h"
 
 
@@ -27,15 +28,15 @@ int restore[HACKED_ENTRIES] = {[0 ... (HACKED_ENTRIES-1)] -1};
 
 
 
-static int check_offset(int offset)
+static int check_offset(int offset, struct soafs_sb_info *sbi)
 {
     /*
      * Tengo conto dei primi due blocchi, contenenti rispettivamente
-     * il superblocco e l'inode del file, e del fatto che il primo
-     * blocco ha indice pari a 0 (e non 1) e quindi l'offset può assumere
-     * valore 0.
+     * il superblocco e l'inode del file, dei blocchi di stato e del
+     * fatto che il primo blocco ha indice pari a 0 (e non 1) e quindi
+     * l'offset può assumere valore 0.
      */
-    if( ((offset + 2) > (NBLOCKS - 1)) || (offset < 0) )
+    if( ( (2 + sbi->num_block_state + offset) > (sbi->num_block - 1) ) || (offset < 0) )
     {
         return 1;
     }
@@ -77,22 +78,60 @@ static int get_metadata(void)
     return METADATA;
 }*/
 
+char * read_data_block(uint64_t offset, struct ht_valid_entry *entry)
+{
+
+    struct block *item;
+    char *str;
+    size_t len;
+
+    item = entry->head_list;
+
+    while(item!=NULL)
+    {
+        if(item->block_index == offset)
+            break;
+        
+        item = item ->hash_table_next;
+    }
+
+    if(item == NULL)
+        return NULL;
+    
+    len = strlen(item->msg)+1;
+
+    str = (char *)kmalloc(len, GFP_KERNEL);
+
+    if(str==NULL)
+    {
+        printk("%s: Errore malloc() copia stringa\n", MOD_NAME);
+        return NULL;
+    }
+
+    strncpy(str, item->msg, len);
+
+    return str;
+}
+
 
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
-__SYSCALL_DEFINEx(3, _get_data, int, offset, char *, destination, size_t, size){
+__SYSCALL_DEFINEx(3, _get_data, uint64_t, offset, char *, destination, size_t, size){
 #else
-asmlinkage int sys_get_data(int offset, char * destination, size_t size){
+asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
 #endif
 
-    struct buffer_head *bh = NULL;
+    struct soafs_sb_info *sbi;
+    struct ht_valid_entry *entry;
     int ret;
-    int real_offset;
-    int str_len;
+    int i;
     int available_data;
     size_t byte_ret;
     size_t byte_copy;                                           /* Il numero di byte che verranno restituiti all'utente */
     char *msg_block;                                            /* Il messaggio contenuto all'interno del blocco del device */   
+    unsigned long my_epoch;
+    unsigned long * epoch;
+    int index;
     
     LOG_SYSTEM_CALL("get_data");
     
@@ -104,37 +143,46 @@ asmlinkage int sys_get_data(int offset, char * destination, size_t size){
         return -ENODEV;
     }
 
-    if( check_offset(offset) || check_size(size) )
+    sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
+
+    /* Faccio un controllo sui parametri */
+    if( check_offset(offset, sbi) || check_size(size) )
     {
         LOG_PARAM_ERR("get_data");
         return -EINVAL;
     }
 
-    real_offset = offset + 2;                                   /* Non considero i blocchi 1 e 2 che contengono rispettivamente il superblocco e l'inode */
-
-    bh = sb_bread(sb_global, real_offset);          /* Utilizziamo il buffer cache per caricare il blocco 'offset' richiesto */                      
-
-    if(bh == NULL)
+    /* Verifico se il blocco richiesto è valido */
+    if(!check_bit(offset))
     {
-        LOG_BH("get_data", "lettura", real_offset, "errore");
-        return -EIO;
+        printk("%s: E' stata richiesta la lettura del blocco %lld ma il blocco non è valido\n", MOD_NAME, offset);
+        return -ENODATA;
     }
 
-    LOG_BH("get_data", "lettura", real_offset, "successo");
+    //RCU
 
-    msg_block = (char *)bh->b_data;                 /* Prendo il riferimento al messaggio contenuto nel blocco portato in memoria */
+    /* Determino la lista che contiene il blocco */
+    i = offset % x;
 
-    //TODO: gestisce gli eventuali metadati.
+    entry = &(hash_table_valid[i]);
 
-    //msg_block = msg_block + get_metadata();
-    msg_block = msg_block;
+    epoch = &(entry->epoch);
 
-    str_len = strlen(msg_block);                    /* Non tiene conto del terminatore di stringa */
+    my_epoch = __sync_fetch_and_add(epoch,1);
 
-    printk("%s: il messaggio letto dal blocco del device è '%s' ed ha una dimensione di %d\n", MOD_NAME, msg_block, str_len);
+    msg_block = read_data_block(offset, entry);
 
-    //available_data = get_available_data();          /* La dimensione massima del messsaggio che può essere mantenuto nei blocchi del device */
-    available_data = 0;
+	index = (my_epoch & MASK) ? 1 : 0;
+
+	__sync_fetch_and_add(&entry->standing[index],1);    
+
+    if(msg_block == NULL)
+    {
+        printk("%s: E' stata richiesta la lettura del blocco %lld ma non è valido\n", MOD_NAME, offset);
+        return -ENODATA;
+    }
+
+    available_data = strlen(msg_block) + 1;
 
     if(size > available_data)
     {
@@ -171,11 +219,9 @@ asmlinkage int sys_get_data(int offset, char * destination, size_t size){
       
     }    
 
-    printk("Numero di bytes che verranno effettivamente restituiti è %ld\n", byte_copy);
+    printk("%s: Numero di bytes che verranno effettivamente restituiti è %ld\n", MOD_NAME, byte_copy);
     
     byte_ret = copy_to_user(destination, msg_block, byte_copy);
-
-    brelse(bh);                                     /* Rilascio del buffer cache */
     
     return (byte_copy - byte_ret);
 	
