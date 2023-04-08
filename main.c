@@ -59,25 +59,6 @@ static int check_size(size_t size)
 
 
 
-/*
- * Computa il numero di byte all'interno di un
- * blocco del device che sono riservati per
- * mantenere il messaggio utente. Gli eventuali
- * altri bytes vengono utilizzati per mantenere i
- * metadati.
- *
-static int get_available_data(void)
-{
-    return SOAFS_BLOCK_SIZE - METADATA;
-}*/
-
-
-/*
-static int get_metadata(void)
-{
-    return METADATA;
-}*/
-
 char * read_data_block(uint64_t offset, struct ht_valid_entry *entry)
 {
 
@@ -152,23 +133,22 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
         return -EINVAL;
     }
 
-    /* Verifico se il blocco richiesto è valido */
-    if(!check_bit(offset))
-    {
-        printk("%s: E' stata richiesta la lettura del blocco %lld ma il blocco non è valido\n", MOD_NAME, offset);
-        return -ENODATA;
-    }
-
-    //RCU
-
-    /* Determino la lista che contiene il blocco */
-    i = offset % x;
+    i = offset % x;                                             /* Determino la lista che contiene il blocco */
 
     entry = &(hash_table_valid[i]);
 
     epoch = &(entry->epoch);
 
     my_epoch = __sync_fetch_and_add(epoch,1);
+
+    /* Verifico se il blocco richiesto è valido */
+    if(!check_bit(offset))
+    {
+        printk("%s: E' stata richiesta la lettura del blocco %lld ma il blocco non è valido\n", MOD_NAME, offset);
+        index = (my_epoch & MASK) ? 1 : 0;
+        __sync_fetch_and_add(&entry->standing[index],1);
+        return -ENODATA;
+    }
 
     msg_block = read_data_block(offset, entry);
 
@@ -178,7 +158,7 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
 
     if(msg_block == NULL)
     {
-        printk("%s: E' stata richiesta la lettura del blocco %lld ma non è valido\n", MOD_NAME, offset);
+        printk("%s: E' stata richiesta la lettura del blocco %lld ma è stato invalidato\n", MOD_NAME, offset);
         return -ENODATA;
     }
 
@@ -234,15 +214,15 @@ __SYSCALL_DEFINEx(2, _put_data, char *, source, size_t, size){
 #else
 asmlinkage int sys_put_data(char * source, size_t size){
 #endif
-
-    struct buffer_head *bh = NULL;
+    struct soafs_sb_info *sbi;
     int available_data;
-    char *msg_block;
     int ret;    
     char *msg;                      /* Il messaggio che si richiede di scrivere nel blocco */
     size_t msg_size;                /* La dimensione del messaggio che verrà scritto nel blocco */    
     size_t bytes_to_copy;           /* Il numero di bytes che verranno effettivamente copiati dallo spazio utente */    
     unsigned long bytes_ret;        /* Il numero di bytes effettivamente copiati */
+    uint64_t index;
+    struct block_free *item;
 
     LOG_SYSTEM_CALL("put_data");
 
@@ -254,22 +234,85 @@ asmlinkage int sys_put_data(char * source, size_t size){
         return -ENODEV;
     }
 
-    if( check_size(size) )
+    if(check_size(size))
     {
         LOG_PARAM_ERR("get_data");
         return -EINVAL;
     }
 
-    //available_data = get_available_data();        /* La dimensione massima del messsaggio che può essere mantenuto nei blocchi del device */
-    available_data = 0;
+    sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
+
+    if( (num_block_free_used == sbi->num_block_free) && (head_free_block_list == NULL) )
+    {
+        printk("%s: Non ci sono più blocchi liberi da utilizzare\n", MOD_NAME);
+        return -ENOMEM;
+    }
+
+    /* Recupero l'indice del blocco libero da utilizzare */
+    item = NULL;
+
+    if(head_free_block_list == NULL)
+    {
+    
+        /*
+         * Devo trovare nuovi blocchi liberi tra quelli
+         * che erano liberi al tempo di montaggio e che
+         * finora non ho mai utilizzato.
+         */
+
+
+        /* Prendo lo spinlock per caricare i blocchi nella lista una sola volta */
+
+
+
+        /* Inserisco i nuovi blocchi liberi all'interno della lista. */
+        ret = get_bitmask_block();
+
+        if(ret)
+        {
+                printk("%s: Errore nel recupero di un blocco libero\n", MOD_NAME);
+                return -EIO;    
+        }
+
+        /*
+         * Per via della concorrenza, è possibile che la testa
+         * della lista risulti essere NULL. In questo caso, non
+         * esistono blocchi liberi da utilizzare.
+         */
+        if(head_free_block_list == NULL)
+        {
+                printk("%s: Non ci sono più blocchi liberi da utilizzare\n", MOD_NAME);
+                return -ENOMEM;
+        }
+
+    }
+
+    /* Prendo il blocco in testa alla lista */
+    item = get_freelist_head();
+    
+    if(item == NULL)
+    {
+        printk("%s: Errore nel recupero di un blocco libero\n", MOD_NAME);
+        return -ENOMEM;
+    }
+
+    index = item -> block_index;
+
+    kfree(item);
+
+    printk("%s: Indice del blocco libero da utilizzare - %lld\n", MOD_NAME, index);
+
+    /* Calcolo i byte effettivi del messaggio da scrivere nel blocco */
+
+    available_data = SOAFS_BLOCK_SIZE - (sizeof(uint64_t));
 
     if(size > available_data)
     {
         /*
          * Si sta chiedendo di scrivere un messaggio
-         * che ha la dimensione maggiore della dimensione
-         * massima per un messaggio che viene scritto nel
-         * device. Di conseguenza, il messaggio verrà scritto
+         * che ha una dimensione maggiore della dimensione
+         * massima consentita per un messaggio utente.
+         * Di conseguenza, il messaggio verrà scritto solo
          * parzialmente. La componente '-1' della variabile
          * 'bytes_to_copy' è dovuta al fatto che bisogna
          * tener conto del terminatore di stringa '\0'.
@@ -290,7 +333,8 @@ asmlinkage int sys_put_data(char * source, size_t size){
     }
 
 
-    msg = (char *)kmalloc(msg_size, GFP_KERNEL);        /* Alloco la memoria per ospitare il messaggio proveniente dallo spazio utente */
+    /* Alloco la memoria per ospitare il messaggio proveniente dallo spazio utente */
+    msg = (char *)kmalloc(msg_size, GFP_KERNEL);
 
     if(msg == NULL)
     {
@@ -304,12 +348,29 @@ asmlinkage int sys_put_data(char * source, size_t size){
 
     if(bytes_to_copy!=msg_size)
     {
-        msg[msg_size - 1] = '\0';                           /* Inserisco il terminatore di stringa */
+         /* Inserisco il terminatore di stringa */
+        msg[msg_size - 1] = '\0';
     }
 
     printk("%s: E' stato richiesto di scrivere il messaggio '%s'\n", MOD_NAME, msg);
 
-    printk("%s: Il file system su cui si sta lavorando è di tipo %s\n", MOD_NAME, sb_global->s_type->name);
+    ret = insert_hash_table_valid_and_sorted_list(msg, -1, index);
+
+    if(ret)
+    {
+        printk("%s: Errore nell'inserimento del nuovo blocco con indice %lld\n", MOD_NAME, index);
+        kfree(msg);
+        return -EIO;
+    }
+
+    kfree(msg);
+
+    set_bitmask(index, 1);    
+
+    return bytes_to_copy - bytes_ret;
+
+
+/* ------------------------------------------------------------------------------------------------------ 
 
     //TODO: determina, se esiste, un blocco libero per la scrittura del messaggio
     bh = sb_bread(sb_global, 2);                            
@@ -322,15 +383,15 @@ asmlinkage int sys_put_data(char * source, size_t size){
 
     LOG_BH("put_data", "scrittura", 2, "successo");  
 
-    msg_block = (char *)bh->b_data;                 /* Prendo il messaggio contenuto nel blocco */
+    msg_block = (char *)bh->b_data;                 
 
     memcpy(msg_block, msg, msg_size);
 
-    mark_buffer_dirty(bh);                          /* Marco il buffer cache come DIRTY per flushare i dati */
+    mark_buffer_dirty(bh);                          
 
-    brelse(bh);                                     /* Rilascio del buffer cache */
+    brelse(bh);                                 
 
-    return bytes_to_copy - bytes_ret;
+    return bytes_to_copy - bytes_ret;*/
 	
 }
 

@@ -14,17 +14,66 @@ int main(int argc, char** argv){
 	char * filename, *buffer;
 	ssize_t ret;
 	int n;
-    const char * str = "ciao come stai? Spero tutto bene!";
-    const char * str2 = "Proviamo con il secondo tentativo... dovrebbe andare tutto bene.";
-    const char * str3 = "Blocco #0.";
+    const char * str1 = "Nuovo messaggio 1";
+    const char * str2 = "Nuovo messaggio 2";
+    const char * str3 = "Nuovo messaggio 3";
     char *msg;
 
     msg = (char *)malloc(4000);
 
-    ret = syscall(156,650, msg, 4000);
+    memset(msg, 0, 4000);
+
+    ret = syscall(156,0, msg, 4000);
 
     printf("Valore di ritorno della system call - %ld\n", ret);
+
     printf("Messaggio letto - %s\n", msg);
+
+    memset(msg, 0, 4000);
+
+    ret = syscall(156,64, msg, 4000);
+
+    printf("Valore di ritorno della system call - %ld\n", ret);
+
+    printf("Messaggio letto - %s\n", msg);
+
+    memset(msg, 0, 4000);
+
+    ret = syscall(156,128, msg, 4000);
+
+    printf("Valore di ritorno della system call - %ld\n", ret);
+
+    printf("Messaggio letto - %s\n", msg);
+
+    memset(msg, 0, 4000);
+
+    ret = syscall(156,192, msg, 4000);
+
+    printf("Valore di ritorno della system call - %ld\n", ret);
+
+    printf("Messaggio letto - %s\n", msg);
+
+    memset(msg, 0, 4000);
+
+
+/* ---------------------------------------------------------------------------------------- */
+
+    ret = syscall(174, str2, strlen(str2) + 1);
+
+    printf("Valore di ritorno della system call - %ld\n", ret);
+
+
+
+
+
+
+
+
+
+
+
+
+
 /*
     msg = (char *)malloc(4000);
     memset(msg,0,4000);

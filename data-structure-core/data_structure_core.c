@@ -14,6 +14,7 @@ uint64_t num_block_free_used = 0;
 uint64_t pos = 0;
 uint64_t**bitmask = NULL;
 int x = 0;
+uint64_t empty_actual_size = 0;
 
 
 
@@ -109,7 +110,6 @@ void debugging_init(void)
  */
 void compute_num_rows(uint64_t num_data_block)
 {
-    // int x;
     int list_len;
     
     if(num_data_block == 1)
@@ -261,6 +261,207 @@ void check_consistenza(void)
 
 
 /*
+ * Restituisce l'indice del blocco libero in testa alla lista.
+ */
+struct block_free * get_freelist_head(void)
+{
+    int ret;
+    struct block_free *old_head;
+    int n;    
+
+    n = 0;
+
+retry:
+
+    old_head = head_free_block_list;
+
+    /* Gestione di molteplici scritture concorrenti */
+    if(head_free_block_list == NULL)
+    {
+        return NULL;
+
+    }
+
+    ret = __sync_bool_compare_and_swap(&head_free_block_list, old_head, head_free_block_list->next);
+
+    if(!ret)
+    {
+        n++;
+
+        if(n > 10)
+        {
+            return NULL;
+        }
+    
+        goto retry;
+    }
+
+    return old_head;
+}
+
+
+
+int check_bit(uint64_t index)
+{
+    uint64_t base;
+    uint64_t offset;
+    int bitmask_entry;
+    int array_entry;
+    int bits;
+
+    bits = sizeof(uint64_t) * 8;
+    base = 1;
+
+    /* 
+     * Determino il blocco di stato che contiene
+     * l'informazione relativa al blocco che sto
+     * richiedendo (i.e., l'array di uint64_t).
+     */
+    bitmask_entry = index / (SOAFS_BLOCK_SIZE << 3);
+
+    /* Determino la entry dell'array */
+    array_entry = (index  % (SOAFS_BLOCK_SIZE << 3)) / bits;
+
+    /* Determino l'offset nella entry dell'array */
+    offset = index % bits;
+
+    if(bitmask[bitmask_entry][array_entry] & (base << offset))
+    {
+        printk("%s: Il blocco di dati ad offset %lld è valido.\n", MOD_NAME, index);
+        return 1;
+    }
+
+    printk("%s: Il blocco di dati ad offset %lld non è valido.\n", MOD_NAME, index);
+    
+    return 0;
+}
+
+
+
+int get_bitmask_block(void)
+{
+    int ret;
+    uint64_t index;
+    uint64_t count;
+    uint64_t num_block_data;
+    struct soafs_sb_info *sbi;
+    struct block_free *old_head;
+    struct block_free *bf;
+
+    sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
+
+    /*
+     * Devo gestire la concorrenza tra i vari scrittori. Può
+     * accadere che più thread nello stesso momento
+     * devono invocare questa funzione. Solamente un
+     * thread alla volta può eseguirla in modo da
+     * caricare nella lista le informazioni solamente
+     * una volta. Dopo che il primo thread ha eseguito
+     * questa funzione, i threads successivi possono
+     * trovarsi la lista non vuota, poiché precedentemente
+     * popolata, oppure la lista nuovamente vuota ma
+     * con tutti i blocchi liberi già utilizzati.
+     * In entrambi i casi, la funzione non deve essere
+     * eseguita poiché o i blocchi sono stati già
+     * recuperati oppure non esiste alcun blocco libero
+     * da utilizzare per inserire il messaggio.
+     */
+
+    if( (head_free_block_list != NULL) || (num_block_free_used == sbi->num_block_free))
+    {
+        printk("%s: I blocchi sono stati già determinati\n", MOD_NAME);
+        return 0;
+    }
+
+    /* Recupero il numero totale dei blocchi di dati */
+    num_block_data = sbi->num_block - 2 - sbi->num_block_state;
+
+    /* 
+     * Questa variabile rappresenta il numero massimo di
+     * blocchi che è possibile inserire all'interno della
+     * lista. In questo modo, riesco a gestire meglio la
+     * quantità di memoria utilizzata. 
+     */
+    count = empty_actual_size;
+
+
+    /*
+     * Itero sui bit di stato alla ricerca dei
+     * blocchi liberi da inserire nella lista.
+     */
+    for(index = pos; index<num_block_data; index++)
+    {
+
+        printk("%s: Verifica della validità del blocco con indice %lld\n", MOD_NAME, index);
+
+        ret = check_bit(index);
+
+        if(!ret)
+        {
+
+            /* Ho trovato un nuovo blocco libero da inserire nella free list */
+
+            bf = (struct block_free *)kmalloc(sizeof(struct block_free), GFP_KERNEL);
+
+            if(bf == NULL)
+            {
+                    printk("%s: Errore kmalloc() nuovo blocco libero con indice %lld\n", MOD_NAME, index);
+                    return 1;
+            }
+
+            bf -> block_index = index;
+retry:
+
+            old_head = head_free_block_list;
+        
+            /* Implemento un inserimento in testa alla lista */
+            bf->next = head_free_block_list;
+
+            ret = __sync_bool_compare_and_swap(&head_free_block_list, old_head, bf);
+
+            if(!ret)
+            {
+                    goto retry;
+            }
+
+            pos = index + 1;
+
+            printk("%s: Il nuovo valore di pos è pari a %lld\n", MOD_NAME, pos);
+
+            num_block_free_used++;
+
+            count --;
+
+            /*
+             * Verifico se ho esaurito il numero di blocchi liberi oppure
+             * ho già caricato il numero massimo di blocchi all'interno
+             * della lista. In entrambi i casi, interrompo la ricerca
+             * in modo da risparmiare le risorse.
+             */
+            if( (num_block_free_used == sbi->num_block_free)  || (count == 0) )
+            {
+                if(num_block_free_used == sbi->num_block_free)
+                {
+                    printk("%s: Ho esaurito il numero di blocchi liberi totali\n", MOD_NAME);
+                }
+                else
+                {
+                    printk("%s: Ho inserito il numero massimo di elementi all'interno della lista\n", MOD_NAME);
+                }
+
+                break;  
+            }                       
+        }
+    
+    }
+
+    return 0;
+    
+}
+
+
+
+/*
  * Inserisce un nuovo elemento all'interno della lista free_block_list.
  * L'inserimento viene fatto in testa poiché non mi importa mantenere
  * alcun ordine tra i blocchi liberi.
@@ -338,6 +539,8 @@ int init_free_block_list(uint64_t *index_free, uint64_t actual_size)
 
     pos = index_free[actual_size - 1] + 1;
 
+    empty_actual_size = actual_size;
+
     printk("%s: Il numero di blocchi liberi utilizzati è pari a %lld.\n", MOD_NAME, num_block_free_used);
 
     printk("%s: Il valore di pos è pari a %lld.\n", MOD_NAME, pos);
@@ -348,7 +551,8 @@ int init_free_block_list(uint64_t *index_free, uint64_t actual_size)
 }
 
 
-int check_bit(uint64_t index)
+
+void set_bitmask(uint64_t index, int mode)
 {
     uint64_t base;
     uint64_t offset;
@@ -357,7 +561,7 @@ int check_bit(uint64_t index)
     int bits;
 
     bits = sizeof(uint64_t) * 8;
-    base = 1;
+    
 
     /* 
      * Determino il blocco di stato che contiene
@@ -372,15 +576,18 @@ int check_bit(uint64_t index)
     /* Determino l'offset nella entry dell'array */
     offset = index % bits;
 
-    if(bitmask[bitmask_entry][array_entry] & (base << offset))
+    if(mode)
     {
-        printk("%s: Il blocco di dati ad offset %lld è valido.\n", MOD_NAME, index);
-        return 1;
+        base = 1;
+        bitmask[bitmask_entry][array_entry] |= (base << offset);
     }
-
-    printk("%s: Il blocco di dati ad offset %lld non è valido.\n", MOD_NAME, index);
+    else
+    {
+        base = 0;
+        bitmask[bitmask_entry][array_entry] &= (base << offset);
+    }
     
-    return 0;
+
 }
 
 
@@ -409,7 +616,11 @@ void insert_sorted_list(struct block *block)
     }
     else
     {
-        if( (head_sorted_list->pos) > (block->pos) )
+        if(block->pos == -1)
+        {
+            //TODO: Inserimento in coda
+        }
+        else if( (head_sorted_list->pos) > (block->pos) )
         {
             /* Inserimento in testa */
             block->sorted_list_next = head_sorted_list;
@@ -448,7 +659,7 @@ void insert_sorted_list(struct block *block)
  * Inserisce un nuovo elemento all'interno della lista
  * identificata dal parametro 'x'.
  */
-int insert_hash_table_valid_and_sorted_list(struct soafs_block *data_block, uint64_t pos, uint64_t index)
+int insert_hash_table_valid_and_sorted_list(char *data_block_msg, uint64_t pos, uint64_t index)
 {
     int num_entry_ht;
     size_t len;
@@ -458,6 +669,7 @@ int insert_hash_table_valid_and_sorted_list(struct soafs_block *data_block, uint
 
     /* Identifico la lista corretta nella hash table per effettuare l'inserimento */
     num_entry_ht = index % x;
+
     ht_entry = &(hash_table_valid[num_entry_ht]);
 
     /* Alloco il nuovo elemento da inserire nella lista */
@@ -474,7 +686,7 @@ int insert_hash_table_valid_and_sorted_list(struct soafs_block *data_block, uint
 
     new_item->pos = pos;
 
-    len = strlen(data_block->msg) + 1;
+    len = strlen(data_block_msg) + 1;
 
     new_item->msg = (char *)kmalloc(len, GFP_KERNEL);
 
@@ -484,11 +696,11 @@ int insert_hash_table_valid_and_sorted_list(struct soafs_block *data_block, uint
         return 1;
     }
 
-    printk("%s: Stringa da copiare per il blocco con indice %lld - %s.\n", MOD_NAME, index, data_block->msg);
+    printk("%s: Stringa da copiare per il blocco con indice %lld - %s.\n", MOD_NAME, index, data_block_msg);
 
-    strncpy(new_item->msg, data_block->msg, len);
+    strncpy(new_item->msg, data_block_msg, len);
 
-    printk("Lunghezza della stringa copiata %ld - Dimensione del buffer allocato %ld.\n", strlen(data_block->msg) + 1, strlen(new_item->msg) + 1);
+    printk("Lunghezza della stringa copiata %ld - Dimensione del buffer allocato %ld.\n", strlen(data_block_msg) + 1, strlen(new_item->msg) + 1);
 
     /* Inserimento in testa */
     if(ht_entry->head_list == NULL)
@@ -566,7 +778,7 @@ int init_ht_valid_and_sorted_list(uint64_t num_data_block)
 
         data_block = (struct soafs_block *)bh->b_data;
 
-        ret = insert_hash_table_valid_and_sorted_list(data_block, data_block->pos, index);
+        ret = insert_hash_table_valid_and_sorted_list(data_block->msg, data_block->pos, index);
 
         if(ret)
         {
@@ -587,7 +799,6 @@ int init_ht_valid_and_sorted_list(uint64_t num_data_block)
 
 int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint64_t actual_size)
 {
-    // int x;                              // Numero di entry della tabella hash
     int ret;
     uint64_t index;
     size_t size_ht;
