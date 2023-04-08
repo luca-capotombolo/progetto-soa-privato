@@ -344,7 +344,7 @@ asmlinkage int sys_put_data(char * source, size_t size){
 
     bytes_ret = copy_from_user(msg, source, bytes_to_copy);
 
-    printk("Sono stati copiati %ld bytes\n", bytes_ret);
+    printk("Numero di bytes non copiati da user space - %ld\n", bytes_ret);
 
     if(bytes_to_copy!=msg_size)
     {

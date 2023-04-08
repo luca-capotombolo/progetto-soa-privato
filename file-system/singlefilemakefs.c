@@ -121,8 +121,8 @@ int main(int argc, char *argv[])
     sb.actual_size = actual_size;
 
     /* inserisci i primi actual_size blocchi liberi */
-    sb.index_free[0] = 4;
-    sb.index_free[1] = 67;
+    sb.index_free[0] = 1;
+    sb.index_free[1] = 2;
     //sb.index_free[1] = 65; 
     //sb.index_free[1] = 165;   
 

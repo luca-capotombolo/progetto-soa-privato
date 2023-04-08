@@ -7,51 +7,17 @@
 
 ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t * off) {
 
-    struct buffer_head *bh = NULL;
-    struct inode * the_inode;
-    struct super_block *sb;
-    uint64_t file_size;
-    char * block_data;
+    struct block *curr;
 
-    //TODO: da implementare
+    //TODO: Includilo nel grace period
+
     printk("%s: E' stata invocata la funzione di lettura con dimensione richiesta pari a %ld.", MOD_NAME, len);
 
-    the_inode = filp->f_inode;
-    file_size = the_inode->i_size;
+    printk("%s: Il valore dell'offset è pari a %lln\n", MOD_NAME, off);
 
-    printk("%s: La dimensione del file è pari a %lld bytes\n", MOD_NAME, file_size);
+    curr = head_sorted_list;
 
-    sb = the_inode->i_sb;
-
-    printk("%s: Tipologia di file system su cui stiamo operando: %s\n", MOD_NAME, sb->s_type->name);
-
-    bh = (struct buffer_head *)sb_bread(sb, 2);
-
-    if(bh == NULL)
-    {
-        printk("%s: Errore nella lettura del blocco #0\n", MOD_NAME);
-        return -EIO;
-    }
-
-    block_data = (char *)bh->b_data;
     
-    printk("%s: Contenuto del blocco #0:%s\n", MOD_NAME, block_data);
-
-    brelse(bh);
-
-    bh = (struct buffer_head *)sb_bread(sb, 3);
-
-    if(bh == NULL)
-    {
-        printk("%s: Errore nella lettura del blocco #1\n", MOD_NAME);
-        return -EIO;
-    }
-
-    block_data = (char *)bh->b_data;
-    
-    printk("%s: Contenuto del blocco #1:%s\n", MOD_NAME, block_data);
-
-    brelse(bh);    
     
     return 1;
 

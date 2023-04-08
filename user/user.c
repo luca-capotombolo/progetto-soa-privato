@@ -4,10 +4,34 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <stdint.h>
 #include<fcntl.h>
 
 #define NUM_DATA_BLOCK 2
 #define MSG_SIZE 4096
+
+void get_data(char *msg, size_t size, uint64_t offset)
+{
+    int ret;
+
+    ret = syscall(156,offset, msg, size);
+
+    printf("Valore di ritorno della system call - %d\n", ret);
+
+    printf("Messaggio letto - %s\n", msg);
+
+    memset(msg, 0, 4000);
+}
+
+void put_data(char *msg)
+{
+
+    int ret;
+
+    ret = syscall(174, msg, strlen(msg) + 1);
+
+    printf("Valore di ritorno della system call - %d\n", ret);
+}
 
 int main(int argc, char** argv){
 	int fd;
@@ -23,56 +47,17 @@ int main(int argc, char** argv){
 
     memset(msg, 0, 4000);
 
-    ret = syscall(156,0, msg, 4000);
+    get_data(msg, 4000, 0);
 
-    printf("Valore di ritorno della system call - %ld\n", ret);
+    get_data(msg, 4000, 64);
 
-    printf("Messaggio letto - %s\n", msg);
+    get_data(msg, 4000, 128);
 
-    memset(msg, 0, 4000);
-
-    ret = syscall(156,64, msg, 4000);
-
-    printf("Valore di ritorno della system call - %ld\n", ret);
-
-    printf("Messaggio letto - %s\n", msg);
-
-    memset(msg, 0, 4000);
-
-    ret = syscall(156,128, msg, 4000);
-
-    printf("Valore di ritorno della system call - %ld\n", ret);
-
-    printf("Messaggio letto - %s\n", msg);
-
-    memset(msg, 0, 4000);
-
-    ret = syscall(156,192, msg, 4000);
-
-    printf("Valore di ritorno della system call - %ld\n", ret);
-
-    printf("Messaggio letto - %s\n", msg);
-
-    memset(msg, 0, 4000);
-
+    get_data(msg, 4000, 192);
 
 /* ---------------------------------------------------------------------------------------- */
 
-    ret = syscall(174, str2, strlen(str2) + 1);
-
-    printf("Valore di ritorno della system call - %ld\n", ret);
-
-
-
-
-
-
-
-
-
-
-
-
+    put_data(str2);
 
 /*
     msg = (char *)malloc(4000);
