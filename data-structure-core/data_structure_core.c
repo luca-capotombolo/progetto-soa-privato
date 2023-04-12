@@ -434,7 +434,7 @@ retry:
 
             /*
              * Verifico se ho esaurito il numero di blocchi liberi oppure
-             * ho già caricato il numero massimo di blocchi all'interno
+             * se ho già caricato il numero massimo di blocchi all'interno
              * della lista. In entrambi i casi, interrompo la ricerca
              * in modo da risparmiare le risorse.
              */

@@ -26,6 +26,8 @@ unsigned long the_ni_syscall;
 unsigned long new_sys_call_array[] = {0x0, 0x0, 0x0};
 int restore[HACKED_ENTRIES] = {[0 ... (HACKED_ENTRIES-1)] -1};
 
+static DEFINE_MUTEX(free_list_mutex);
+
 
 
 static int check_offset(int offset, struct soafs_sb_info *sbi)
@@ -216,7 +218,8 @@ asmlinkage int sys_put_data(char * source, size_t size){
 #endif
     struct soafs_sb_info *sbi;
     int available_data;
-    int ret;    
+    int ret;
+    int n;                          /* Numero corrente di tentativi per il recupero del blocco libero */
     char *msg;                      /* Il messaggio che si richiede di scrivere nel blocco */
     size_t msg_size;                /* La dimensione del messaggio che verrà scritto nel blocco */    
     size_t bytes_to_copy;           /* Il numero di bytes che verranno effettivamente copiati dallo spazio utente */    
@@ -250,6 +253,7 @@ asmlinkage int sys_put_data(char * source, size_t size){
 
     /* Recupero l'indice del blocco libero da utilizzare */
     item = NULL;
+    n = 0;
 
     if(head_free_block_list == NULL)
     {
@@ -260,29 +264,48 @@ asmlinkage int sys_put_data(char * source, size_t size){
          * finora non ho mai utilizzato.
          */
 
+retry:
 
-        /* Prendo lo spinlock per caricare i blocchi nella lista una sola volta */
+        if(n > 5)
+        {
+            printk("%s: Numero di tentativi esaurito nel recupero di un blocco libero.\n", MOD_NAME);
+            return -ENOMEM;
+        }
 
-
+        /* Prendo il mutex per caricare i blocchi nella lista una sola volta */
+        mutex_lock(&free_list_mutex);
 
         /* Inserisco i nuovi blocchi liberi all'interno della lista. */
         ret = get_bitmask_block();
 
         if(ret)
         {
-                printk("%s: Errore nel recupero di un blocco libero\n", MOD_NAME);
+                printk("%s: Errore kmalloc() nel recupero di un blocco libero\n", MOD_NAME);
                 return -EIO;    
         }
+
+        /* Rilascio il mutex per terminare la sezione critica */
+        mutex_unlock(&free_list_mutex);
 
         /*
          * Per via della concorrenza, è possibile che la testa
          * della lista risulti essere NULL. In questo caso, non
          * esistono blocchi liberi da utilizzare.
          */
-        if(head_free_block_list == NULL)
+        if( (head_free_block_list == NULL) && (num_block_free_used == sbi->num_block_free) )
         {
                 printk("%s: Non ci sono più blocchi liberi da utilizzare\n", MOD_NAME);
                 return -ENOMEM;
+        }
+
+        /*
+         * La lista si è nuovamente svuotata. Si tenta
+         * di caricare nuovamente i blocchi dal device.
+         */
+        if( (head_free_block_list == NULL) &&  (num_block_free_used < sbi->num_block_free))
+        {
+            n++;
+            goto retry;
         }
 
     }
