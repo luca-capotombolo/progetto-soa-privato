@@ -5,6 +5,8 @@
 
 #include <linux/types.h>        /* uint64_t */
 
+#define MASK_INVALIDATE 0X8000000000000000
+
 
 /*
  * La struttura dati 'block' rappresenta un singolo
@@ -15,7 +17,7 @@
  */
 struct block {
     uint64_t block_index;   //
-    uint64_t pos;           
+    uint64_t pos;           //         
     char *msg;      //
     struct block* hash_table_next;  //
     struct block* sorted_list_next; //
@@ -62,9 +64,10 @@ extern uint64_t empty_actual_size;                              /* Il numero mas
 extern void compute_num_rows(uint64_t num_data_block);
 extern int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint64_t actual_size);
 extern int check_bit(uint64_t index);
-extern int insert_hash_table_valid_and_sorted_list(char *data_block_msg, uint64_t pos, uint64_t index);
+//extern static int insert_hash_table_valid_and_sorted_list(char *data_block_msg, uint64_t pos, uint64_t index);
 extern struct block_free * get_freelist_head(void);
 extern void set_bitmask(uint64_t index, int mode);
 extern int get_bitmask_block(void);
+extern int insert_hash_table_valid_and_sorted_list_conc(char *data_block_msg, uint64_t pos, uint64_t index);
 
 #endif //data_structure_core.h

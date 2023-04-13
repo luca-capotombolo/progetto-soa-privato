@@ -1,6 +1,7 @@
 #include <linux/buffer_head.h>  /* sb_bread()-brelse() */
 #include <linux/string.h>       /* strncpy() */
 #include <linux/slab.h>         /* kmalloc() */
+#include <linux/wait.h>         /* wait_event_interruptible() - wake_up_interruptible() */
 
 #include "../headers/main_header.h"
 
@@ -16,11 +17,27 @@ uint64_t**bitmask = NULL;
 int x = 0;
 uint64_t empty_actual_size = 0;
 
+/*
+ * Il primo bit identificato tramite la maschera di bit
+ * MASK_INVALIDATE rappresenta l'esistenza di un thread
+ * che sta invalidando un blocco. I restanti bit sono il
+ * numero di thread impegnati nell'operazione di insert
+ * di un nuovo blocco.
+ * Questa variabile consente di sincronizzare le operazioni
+ * di inserimento e l'operazione di invalidazione. Gli unici
+ * scenari consentiti sono i seguenti:
+ * 1. Non ci sono nè inserimenti né invalidazioni.
+ * 2. Ho un numero arbitrario di inserimenti e nessuna
+ *    invalidazione.
+ * 3. Ho un'unica invalidazione e nessun inserimento.
+ */
+uint64_t sync_var = 0;
+static DEFINE_MUTEX(inval_insert_mutex);
+static DECLARE_WAIT_QUEUE_HEAD(the_queue);
 
 
 
-
-void scan_free_list(void)
+void scan_free_list(void) //
 {
     struct block_free *curr;
 
@@ -39,7 +56,7 @@ void scan_free_list(void)
 
 
 
-void scan_sorted_list(void)
+void scan_sorted_list(void) //
 {
     struct block *curr;
 
@@ -59,7 +76,7 @@ void scan_sorted_list(void)
 
 
 
-void scan_hash_table(void)
+void scan_hash_table(void) //
 {
     int entry_num;
     struct ht_valid_entry entry;
@@ -88,7 +105,7 @@ void scan_hash_table(void)
 
 
 
-void debugging_init(void)
+void debugging_init(void) //
 {
     /* scansione della lista contenente le informazioni dei blocchi liberi. */
     scan_free_list();
@@ -108,7 +125,7 @@ void debugging_init(void)
  * logaritmico di elementi per ogni lista della
  * hast_table_valid.
  */
-void compute_num_rows(uint64_t num_data_block)
+void compute_num_rows(uint64_t num_data_block) //
 {
     int list_len;
     
@@ -137,7 +154,7 @@ void compute_num_rows(uint64_t num_data_block)
 
 
 
-int init_bitmask(void)
+int init_bitmask(void) //
 {
     struct buffer_head *bh;
     struct soafs_sb_info *sbi;
@@ -225,7 +242,7 @@ int init_bitmask(void)
 
 
 
-void check_consistenza(void)
+void check_consistenza(void) //
 {
     struct block_free *bf;
     int bitmask_entry;
@@ -262,12 +279,13 @@ void check_consistenza(void)
 
 /*
  * Restituisce l'indice del blocco libero in testa alla lista.
+ * Questa funzione può essere eseguita in concorrenza.
  */
-struct block_free * get_freelist_head(void)
+struct block_free * get_freelist_head(void) //
 {
     int ret;
-    struct block_free *old_head;
-    int n;    
+    int n;
+    struct block_free *old_head;   
 
     n = 0;
 
@@ -276,10 +294,12 @@ retry:
     old_head = head_free_block_list;
 
     /* Gestione di molteplici scritture concorrenti */
-    if(head_free_block_list == NULL)
-    {
-        return NULL;
 
+    //if(head_free_block_list == NULL)
+    if(old_head == NULL)
+    {
+        printk("%s: La lista risulta essere attualmente vuota al tentativo #%d\n", MOD_NAME, n);
+        return NULL;
     }
 
     ret = __sync_bool_compare_and_swap(&head_free_block_list, old_head, head_free_block_list->next);
@@ -301,7 +321,7 @@ retry:
 
 
 
-int check_bit(uint64_t index)
+int check_bit(uint64_t index) //
 {
     uint64_t base;
     uint64_t offset;
@@ -338,7 +358,7 @@ int check_bit(uint64_t index)
 
 
 
-int get_bitmask_block(void)
+int get_bitmask_block(void) //
 {
     int ret;
     uint64_t index;
@@ -466,7 +486,7 @@ retry:
  * L'inserimento viene fatto in testa poiché non mi importa mantenere
  * alcun ordine tra i blocchi liberi.
  */
-int insert_free_list(uint64_t index)
+int insert_free_list(uint64_t index) //
 {
     struct block_free *new_item;
     struct block_free *old_head;
@@ -505,7 +525,7 @@ int insert_free_list(uint64_t index)
  * index_free: array con indici dei blocchi liberi
  * actual_size: dimensione effettiva dell'array relativa al FS che ho montato
  */
-int init_free_block_list(uint64_t *index_free, uint64_t actual_size)
+int init_free_block_list(uint64_t *index_free, uint64_t actual_size) //
 {
     uint64_t index;
     uint64_t roll_index;
@@ -552,7 +572,7 @@ int init_free_block_list(uint64_t *index_free, uint64_t actual_size)
 
 
 
-void set_bitmask(uint64_t index, int mode)
+void set_bitmask(uint64_t index, int mode) //
 {
     uint64_t base;
     uint64_t offset;
@@ -591,6 +611,77 @@ void set_bitmask(uint64_t index, int mode)
 }
 
 
+/*
+ * Questa funzione è simile alla funzione 'insert_sorted_list'
+ * che si trova successivamente. La differenza con l'altra funzione
+ * sta nel fatto che questa gestisce la concorrenza.
+ * In questo scenario, l'inserimento dei blocchi all'interno
+ * della lista viene fatto in coda.
+ */
+int insert_sorted_list_conc(struct block *block)
+{
+    struct block *next;
+    struct block *curr;
+    int ret;
+    int n;
+
+    n = 0;
+
+    block->sorted_list_next = NULL;
+
+    next = NULL;
+
+    if(head_sorted_list == NULL)
+    {
+        ret = __sync_bool_compare_and_swap(&head_sorted_list, next, block);
+
+        if(!ret)
+        {
+            printk("%s: L'inserimento in coda non è stato eseguito poiché la lista non è più vuota\n", MOD_NAME);
+            n++;
+            goto no_empty;        
+        }
+
+        printk("%s: Inserimento in coda nella lista ordinata effettuato con successo per il blocco %lld\n", MOD_NAME, block->block_index);
+    
+        return 0;
+    }
+
+no_empty:
+
+    /*
+     * Poiché le invalidazioni dei blocchi non possono essere eseguite
+     * in concorrenza con gli inserimenti, da questo momento la lista
+     * non potrà essere vuota. In questo modo, posso gestire correttamente
+     * il puntatore 'next'.
+     */
+
+    if(n > 10)
+    {
+        printk("%s: Il numero di tentativi massimo consentito %d è stato raggiunto per l'inserimento nella sorted list del blocco %lld\n", MOD_NAME, n, block->block_index);
+        return 1;
+    }
+
+    curr = head_sorted_list;
+
+    while( curr->sorted_list_next != NULL )
+    {
+        curr = curr->sorted_list_next;
+    }
+
+    ret = __sync_bool_compare_and_swap(&(curr->sorted_list_next), next, block);
+
+    if(!ret)
+    {
+        printk("%s: Tentativo di inserimento #%d del blocco %lld terminato senza successo\n", MOD_NAME, n, block->block_index);
+        n++;
+        goto no_empty;
+    }
+
+    printk("%s: Inserimento in coda nella lista ordinata effettuato con successo per il blocco %lld\n", MOD_NAME, block->block_index);
+
+    return 0;    
+}
 
 
 /*
@@ -598,29 +689,27 @@ void set_bitmask(uint64_t index, int mode)
  * lista contenente i blocchi ordinati secondo
  * l'ordine di consegna. L'elemento non deve essere
  * nuovamente allocato ma si collega l'elemento che 
- * è stato precedentemente allocato.
+ * è stato precedentemente allocato tramite puntatori.
  * Il campo 'pos' rappresenta la posizione del blocco
  * nella lista ordinata e viene sfruttato per determinare
  * la corretta posizione all'interno della lista.
+ * Osservo che l'esecuzione di questa funzione avviene in
+ * assenza di concorrenza.
  */
-void insert_sorted_list(struct block *block)
+void insert_sorted_list(struct block *block) //
 {
     struct block *prev;
     struct block *curr;
 
     if(head_sorted_list == NULL)
     {
-        /* La lista è vuota */
+        /* La lista è vuota ed eseguo un inserimento in testa */
         head_sorted_list = block;
         block->sorted_list_next = NULL;
     }
     else
     {
-        if(block->pos == -1)
-        {
-            //TODO: Inserimento in coda
-        }
-        else if( (head_sorted_list->pos) > (block->pos) )
+        if( (head_sorted_list->pos) > (block->pos) )
         {
             /* Inserimento in testa */
             block->sorted_list_next = head_sorted_list;
@@ -654,12 +743,256 @@ void insert_sorted_list(struct block *block)
 
 
 
+void check_rollback(uint64_t index, struct ht_valid_entry * ht_entry)
+{
+    struct block *curr;
+
+    curr = ht_entry->head_list;
+
+    while(curr != NULL)
+    {
+        if(curr->block_index == index)
+        {
+            printk("%s: [ERRORE] La procedura di rollback non è stata eseguita con successo per il blocco con indice %lld\n", MOD_NAME, index);
+        }
+        curr = curr->hash_table_next;
+    }
+
+    printk("%s: [CHECK] La procedura di rollback è stata eseguita con successo per il blocco con indice %lld\n", MOD_NAME, index);
+}
+
+
+
+static void rollback(uint64_t index, struct ht_valid_entry * ht_entry)
+{
+
+    int ret;
+    int n;
+    struct block *curr;
+    struct block *prev;
+    
+
+    curr = ht_entry->head_list;
+
+    /*
+     * Poiché durante la fase di rollback non è possibile
+     * avere invalidazioni e gli inserimenti nelle
+     * liste della HT avvengono in testa, allora non dovrebbe
+     * esserci alcun nuovo blocco tra quello che si deve
+     * eliminare e il successivo (se esiste).
+     */
+
+
+
+    /*
+     * Verifico se il blocco corrisponde alla testa della lista.
+     * In questo caso, nessun altro blocco è stato successivamente
+     * inserito.
+     */
+
+    if(curr->block_index == index)
+    {
+        ret = __sync_bool_compare_and_swap(&(ht_entry->head_list), curr, curr->hash_table_next);
+
+        if(!ret)
+        {
+            /* Sono stati inseriti nuovi blocchi in testa alla lista */
+            goto no_head;
+        }
+
+        printk("%s: Rollback completato con successo: blocco %lld eliminato dalla HT\n", MOD_NAME, index);
+
+        kfree(curr);
+
+        check_rollback(index, ht_entry);
+
+        return ;
+    }
+
+    n = 0;
+
+no_head:
+
+    prev = ht_entry->head_list;
+
+    curr = prev->hash_table_next;
+
+    while(curr != NULL)
+    {
+        if( curr->block_index == index )
+        {
+            break;
+        }
+
+        prev = curr;
+        curr = curr->hash_table_next;
+    }
+
+    if(curr == NULL)
+    {
+        printk("%s: [ERRORE] Il blocco %lld da rimuovere non è presente nella lista\n", MOD_NAME, index);
+        return ;
+    }
+
+    ret = __sync_bool_compare_and_swap(&(prev->hash_table_next), curr, curr->hash_table_next);
+
+    if(!ret)
+    {
+        n++;
+
+        printk("%s: Tentativo #%d fallito nell'esecuzione della procedura di rollback\n", MOD_NAME, n);
+
+        goto no_head;
+    }
+
+    printk("%s: Rollback completato con successo: blocco %lld eliminato dalla HT\n", MOD_NAME, index);
+
+    kfree(curr);
+}
+
+
+
+/*
+ * Inserisce un nuovo elemento all'interno della lista
+ * nella hash table e all'interno della lista ordinata
+ * dei blocchi. Questa funzione viene eseguita in concorrenza.
+ */
+int insert_hash_table_valid_and_sorted_list_conc(char *data_block_msg, uint64_t pos, uint64_t index)
+{
+    int num_entry_ht;
+    int ret;
+    int n;                                      /* Contatore del numero di tentativi effettuati */
+    struct block *new_item;
+    struct block *old_head;
+    struct ht_valid_entry *ht_entry; 
+
+    /* Identifico la lista corretta nella hash table per effettuare l'inserimento */
+    num_entry_ht = index % x;
+
+    ht_entry = &(hash_table_valid[num_entry_ht]);
+
+    /* Alloco il nuovo elemento da inserire nelle liste */
+    new_item = (struct block *)kmalloc(sizeof(struct block), GFP_KERNEL);
+    
+    if(new_item == NULL)
+    {
+        printk("%s: Errore kmalloc() nell'allocazione del nuovo elemento da inserire nella hash table.", MOD_NAME);
+        return 1;
+    }
+
+    /* Inizializzo il nuovo elemento */
+    new_item->block_index = index;
+
+    new_item->pos = pos;
+
+    new_item->msg = data_block_msg;
+
+    /* Gestisco la concorrenza con le invalidazioni */
+
+    n = 0;
+
+retry_mutex_inval_insert:
+
+    if(n > 10)
+    {
+        printk("%s: [CONFLITTO] Il numero massimo di tentativi %d per l'inserimento del blocco con indice %lld è stato raggiunto\n", MOD_NAME, n, index);
+        return 1;
+    }
+
+    mutex_lock(&inval_insert_mutex);    
+
+    if( sync_var & MASK_INVALIDATE )
+    {
+        printk("%s: E' in corso un'invalidazione, è necessario attendere che l'invalidazione termini\n", MOD_NAME);
+
+        mutex_unlock(&inval_insert_mutex);
+
+        wait_event_interruptible(the_queue, (sync_var & MASK_INVALIDATE) == 0 );
+
+        n++;
+
+        goto retry_mutex_inval_insert;
+    }
+
+    /* 
+     * Comunico la presenza del thread che effettuerà
+     * l'inserimento di un nuovo blocco.
+     */
+    __sync_fetch_and_add(&sync_var,1);
+
+    //asm(memory)
+
+    printk("%s: Comunicazione per l'inserimento del blocco %lld avvenuta con successo\n", MOD_NAME, index);
+
+    mutex_unlock(&inval_insert_mutex);
+
+    /* Inserimento in testa nella lista della HT */
+
+    n = 0;
+
+retry_insert_ht:
+
+    if(n > 10)
+    {
+        printk("%s: Il numero di tentativi massimo consentito %d è stato raggiunto per l'inserimento nella HT\n", MOD_NAME, n);
+
+        __sync_fetch_and_sub(&sync_var,1);              /* Segnalo che l'operazione di inserimento si è conclusa con successo. */
+
+        wake_up_interruptible(&the_queue);
+
+        return 1;
+    }
+
+    old_head = ht_entry->head_list;
+
+    new_item->hash_table_next = old_head;
+
+    ret = __sync_bool_compare_and_swap(&(ht_entry->head_list), old_head, new_item);
+
+    if(!ret)
+    {
+        printk("%s: Conflitto nell'inserimento in testa nella lista #%d della HT tentativo #%d\n", MOD_NAME, num_entry_ht, n);
+        n++;
+        goto retry_insert_ht;
+    }
+
+    printk("%s: Inserimento blocco %lld nella entry #%d della HT completato con successo.\n", MOD_NAME, index, num_entry_ht);
+
+    ret = insert_sorted_list_conc(new_item);            /* Inserimento del blocco nella lista ordinata */
+
+    if(ret)
+    {
+        printk("%s: Il numero di tentativi massimo consentito %d è stato raggiunto per l'inserimento nella sorted list\n", MOD_NAME, 10);
+
+        rollback(new_item->block_index, ht_entry);
+
+        __sync_fetch_and_sub(&sync_var,1);              /* Segnalo che l'operazione di inserimento si è conclusa con successo. */
+
+        wake_up_interruptible(&the_queue);
+
+        return 1;        
+    }
+
+    __sync_fetch_and_sub(&sync_var,1);                  /* Segnalo che l'operazione di inserimento si è conclusa con successo. */
+
+    wake_up_interruptible(&the_queue);
+
+    printk("%s: Inserimento blocco %lld nella sorted list avvenuto con successo\n", MOD_NAME, index);
+
+    asm volatile("mfence");
+
+    return 0;   
+    
+}
+
+
+
 
 /*
  * Inserisce un nuovo elemento all'interno della lista
  * identificata dal parametro 'x'.
  */
-int insert_hash_table_valid_and_sorted_list(char *data_block_msg, uint64_t pos, uint64_t index)
+static int insert_hash_table_valid_and_sorted_list(char *data_block_msg, uint64_t pos, uint64_t index) //
 {
     int num_entry_ht;
     size_t len;
@@ -730,7 +1063,7 @@ int insert_hash_table_valid_and_sorted_list(char *data_block_msg, uint64_t pos, 
 
 
 
-int init_ht_valid_and_sorted_list(uint64_t num_data_block)
+int init_ht_valid_and_sorted_list(uint64_t num_data_block) //
 {
     uint64_t index;
     int isValid;
@@ -797,7 +1130,7 @@ int init_ht_valid_and_sorted_list(uint64_t num_data_block)
 
 
 
-int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint64_t actual_size)
+int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint64_t actual_size) //
 {
     int ret;
     uint64_t index;

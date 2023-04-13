@@ -26,6 +26,11 @@ unsigned long the_ni_syscall;
 unsigned long new_sys_call_array[] = {0x0, 0x0, 0x0};
 int restore[HACKED_ENTRIES] = {[0 ... (HACKED_ENTRIES-1)] -1};
 
+/*
+ * Questo mutex mi consente di gestire il caricamento
+ * delle informazioni relative ai blocchi liberi
+ * all'interno della lista una sola volta.
+ */
 static DEFINE_MUTEX(free_list_mutex);
 
 
@@ -245,16 +250,25 @@ asmlinkage int sys_put_data(char * source, size_t size){
 
     sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
 
+    /*
+     * Verifico se vale la pena eseguire una ricerca dei blocchi
+     * liberi oppure sono già tutti occupati.
+     */
     if( (num_block_free_used == sbi->num_block_free) && (head_free_block_list == NULL) )
     {
         printk("%s: Non ci sono più blocchi liberi da utilizzare\n", MOD_NAME);
         return -ENOMEM;
     }
 
-    /* Recupero l'indice del blocco libero da utilizzare */
     item = NULL;
     n = 0;
 
+    /*
+     * Recupero l'indice del blocco libero da utilizzare. Se
+     * la lista dei blocchi liberi è vuota, allora devo recuperare
+     * le informazioni relative ad altri blocchi liberi; altrimenti,
+     * estraggo il blocco in testa alla lista.
+     */
     if(head_free_block_list == NULL)
     {
     
@@ -268,7 +282,7 @@ retry:
 
         if(n > 5)
         {
-            printk("%s: Numero di tentativi esaurito nel recupero di un blocco libero.\n", MOD_NAME);
+            printk("%s: Numero di tentativi esaurito per il recupero di un blocco libero.\n", MOD_NAME);
             return -ENOMEM;
         }
 
@@ -280,7 +294,7 @@ retry:
 
         if(ret)
         {
-                printk("%s: Errore kmalloc() nel recupero di un blocco libero\n", MOD_NAME);
+                printk("%s: Errore esecuzione kmalloc() nel recupero di un blocco libero\n", MOD_NAME);
                 return -EIO;    
         }
 
@@ -289,8 +303,8 @@ retry:
 
         /*
          * Per via della concorrenza, è possibile che la testa
-         * della lista risulti essere NULL. In questo caso, non
-         * esistono blocchi liberi da utilizzare.
+         * della lista risulti essere NULL.
+         * In questo caso, non esistono blocchi liberi da utilizzare.
          */
         if( (head_free_block_list == NULL) && (num_block_free_used == sbi->num_block_free) )
         {
@@ -299,8 +313,8 @@ retry:
         }
 
         /*
-         * La lista si è nuovamente svuotata. Si tenta
-         * di caricare nuovamente i blocchi dal device.
+         * In questo caso, la lista si è nuovamente svuotata. Si tenta
+         * di caricare nuovamente i blocchi liberi nella lista.
          */
         if( (head_free_block_list == NULL) &&  (num_block_free_used < sbi->num_block_free))
         {
@@ -377,7 +391,7 @@ retry:
 
     printk("%s: E' stato richiesto di scrivere il messaggio '%s'\n", MOD_NAME, msg);
 
-    ret = insert_hash_table_valid_and_sorted_list(msg, -1, index);
+    ret = insert_hash_table_valid_and_sorted_list_conc(msg, sbi->num_block, index);
 
     if(ret)
     {
@@ -385,8 +399,6 @@ retry:
         kfree(msg);
         return -EIO;
     }
-
-    kfree(msg);
 
     set_bitmask(index, 1);    
 
