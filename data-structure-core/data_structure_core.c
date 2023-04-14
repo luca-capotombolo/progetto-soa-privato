@@ -16,6 +16,7 @@ uint64_t pos = 0;
 uint64_t**bitmask = NULL;
 int x = 0;
 uint64_t empty_actual_size = 0;
+struct grace_period *gp = NULL;
 
 /*
  * Il primo bit identificato tramite la maschera di bit
@@ -150,6 +151,277 @@ void compute_num_rows(uint64_t num_data_block) //
 
     printk("%s: La lunghezza massima di una entry della tabella hash è pari a %d.\n", MOD_NAME, list_len);
     printk("%s: Il numero di entry nella tabella hash è pari a %d.\n", MOD_NAME, x);
+}
+
+
+
+/*
+ * Eliminazione del blocco con indice passato
+ * come parametro sia dalla lista nella HT che
+ * dalla lista ordinata.
+ */
+struct result_inval * remove_block(uint64_t index)
+{
+    int num_entry_ht;
+    struct ht_valid_entry *ht_entry;
+    struct block *next;
+    struct block *curr;
+    struct block *prev;
+    struct result_inval *res_inval;
+
+    res_inval = (struct result_inval *)kmalloc(sizeof(struct result_inval), GFP_KERNEL);
+
+    if(res_inval == NULL)
+    {
+        printk("%s: Errore esecuzione kmalloc() nella invalidazione del blocco %lld\n", MOD_NAME, index);
+        return NULL;
+    }
+    
+
+    /* Identifico la lista corretta nella hash table per effettuare l'inserimento */
+    num_entry_ht = index % x;
+
+    ht_entry = &(hash_table_valid[num_entry_ht]);
+
+    curr = ht_entry->head_list;
+
+    /* Gestione di invalidazioni che sono concorrenti */
+    if(curr == NULL)
+    {
+        printk("%s: [INVALIDAZIONE] La lista #%d nella HT risulta essere vuota\n", MOD_NAME, num_entry_ht);
+        res_inval->code = 2;
+        res_inval->block = NULL;
+        return res_inval;
+    }
+
+    if(curr->block_index == index)
+    {
+        ht_entry->head_list = curr->hash_table_next;
+        asm volatile ("mfence");
+
+        printk("%s: [INVALIDAZIONE] Il blocco %lld richiesto per l'invalidazione è stato eliminato con successo dalla lista nella HT\n", MOD_NAME, index);
+        goto remove_sorted_list;
+    }
+
+    prev = curr;
+
+    curr = prev->hash_table_next;
+
+    /*
+     * Ricerco il blocco richiesto da invalidare nella
+     * corretta lista della HT.
+     */
+    while(curr != NULL)
+    {
+        if(curr->block_index == index)
+        {
+            printk("%s: [INVALIDAZIONE] Il blocco %lld da invalidare è stato trovato con successo nella lista della HT\n", MOD_NAME, index);
+            next = curr->hash_table_next;
+            break;
+        }
+        prev = curr;
+        curr = curr->hash_table_next;
+    }
+
+    if( curr == NULL )
+    {
+        printk("%s: [INVALIDAZIONE] Il blocco %lld richiesto per l'invalidazione non è presente nella lista #%d della HT\n", MOD_NAME, index, num_entry_ht);
+        res_inval->code = 2;
+        res_inval->block = NULL;
+        return res_inval;
+    }
+
+    prev->hash_table_next = next;
+    asm volatile ("mfence");
+
+    printk("%s: [INVALIDAZIONE] Il blocco %lld richiesto per l'invalidazione è stato eliminato con successo dalla lista nella HT\n", MOD_NAME, index);
+
+remove_sorted_list:
+
+    /* 
+     * Verifico se il primo blocco nella lista ordinata
+     * è quello richiesto da eliminare. La lista non può
+     * essere vuota poiché c'è almeno l'elemento da invalidare.
+     */
+
+    if( head_sorted_list->block_index == index )
+    {
+        res_inval->code = 0;
+        res_inval->block = head_sorted_list;
+        head_sorted_list = head_sorted_list->sorted_list_next;
+        asm volatile ("mfence");
+
+        printk("%s: [INVALIDAZIONE] Il blocco %lld richiesto per l'invalidazione è stato eliminato con successo dalla lista ordinata\n", MOD_NAME, index);
+        return res_inval;
+    }
+
+    /* Ricerco il blocco richiesto da invalidare nella lista ordinata */
+
+    prev = head_sorted_list;
+
+    curr = prev->sorted_list_next;
+
+    while(curr!=NULL)
+    {
+        if(curr->block_index == index)
+        {
+            printk("%s: [INVALIDAZIONE] Il blocco %lld da invalidare è stato trovato con successo nella lista ordinata\n", MOD_NAME, index);
+            next = curr->sorted_list_next;
+            break;
+        }
+
+        prev = curr;
+        curr = curr->sorted_list_next;
+    }
+
+    if(curr == NULL)
+    {
+        printk("%s: [ERRORE] Errore inconsistenza: il blocco %lld era presente all'interno della lista nella HT ma non nella lista ordinata\n", MOD_NAME, index);
+        res_inval->code = 1;
+        res_inval->block = NULL;
+        return res_inval;
+    }
+
+    res_inval->code = 0;
+    res_inval->block = curr;
+
+    prev->sorted_list_next = next;  
+    asm volatile ("mfence");  
+
+    printk("%s: [INVALIDAZIONE] Il blocco %lld richiesto per l'invalidazione è stato eliminato con successo dalla lista ordinata\n", MOD_NAME, index);
+    
+    return res_inval;
+}
+
+
+
+/*
+ * Questa funzione esegue l'invalidazione del blocco il cui
+ * indice è passato come parametro.
+ */
+
+int invalidate_block(uint64_t index)
+{
+
+    int n ;
+    int index_ht;
+    int index_sorted;
+    unsigned long updated_epoch_ht;
+    unsigned long updated_epoch_sorted;
+    unsigned long last_epoch_ht;
+    unsigned long last_epoch_sorted;
+    unsigned long grace_period_threads_ht;
+    unsigned long grace_period_threads_sorted;
+    uint64_t num_insert;
+    struct result_inval *res_inval;
+
+
+    n = 0;
+
+    /*
+     * Prima di effettuare l'invalidazione, è necessario verificare
+     * se sono in esecuzione degli inserimenti. Nel caso in cui
+     * ci siano degli inserimenti in corso (almeno uno), l'invalidazione
+     * dovrà essere posticipata; altrimenti, si comunica l'inzio della
+     * invalidazione e si procede con la rimozione del blocco. 
+     */
+
+retry_invalidate:
+
+    if(n > 20)
+    {
+        printk("%s: [ERRORE] Il numero massimo di tentativi per l'invalidazione del blocco %lld è stato raggiunto\n", MOD_NAME, index);
+        return 1;
+    }
+
+    /* Sezione critica tra inserimenti e invalidazioni */
+    mutex_lock(&inval_insert_mutex);
+
+    /* Recupero il numero di inserimenti in corso */
+    num_insert = sync_var & MASK_NUMINSERT;
+
+    printk("%s: Il numero di inserimenti attualmente in corso è pari a %lld\n", MOD_NAME, index);
+
+    if(num_insert > 0)
+    {
+        mutex_unlock(&inval_insert_mutex);
+
+        printk("%s: L'invalidazione del blocco %lld non è stata effettuata al tentativo #%d\n", MOD_NAME, index, n);
+
+        printk("%s: Il thread per l'invalidazione del blocco %lld viene messo in attesa\n", MOD_NAME, index);
+
+        wait_event_interruptible(the_queue, (sync_var & MASK_NUMINSERT) == 0);
+
+        n++;
+
+        printk("%s: Nuovo tentativo #%d di invalidazione del blocco %lld\n", MOD_NAME, n, index);
+
+        goto retry_invalidate;
+    }
+
+    /* Comunico l'inizio del processo di invalidazione */
+    sync_var |= 0X8000000000000000;
+
+    mutex_unlock(&inval_insert_mutex);
+
+    /*
+     * Durante il processo di invalidazione non è possibile
+     * avere in concorrenza l'inserimento di un nuovo blocco.
+     */
+
+    res_inval = remove_block(index);
+
+    if( (res_inval == NULL) || (res_inval->code == 1) )
+    {
+        return 1;
+    }
+
+    if(res_inval->code == 2)
+    {
+        return 0;
+    }
+
+    updated_epoch_ht = (gp->next_epoch_index_ht) ? MASK : 0;
+    updated_epoch_sorted = (gp->next_epoch_index_sorted) ? MASK : 0;
+
+    gp->next_epoch_index_ht += 1;
+    gp->next_epoch_index_ht %= 1;
+    gp->next_epoch_index_sorted += 1;
+    gp->next_epoch_index_sorted %= 1;
+
+    last_epoch_ht = __atomic_exchange_n (&(gp->epoch_ht), updated_epoch_ht, __ATOMIC_SEQ_CST);
+    last_epoch_sorted = __atomic_exchange_n (&(gp->epoch_sorted), updated_epoch_sorted, __ATOMIC_SEQ_CST);
+
+    index_ht = (last_epoch_ht & MASK) ? 1:0;
+    index_sorted = (last_epoch_sorted & MASK) ? 1:0;
+
+    grace_period_threads_ht = last_epoch_ht & (~MASK);
+    grace_period_threads_sorted = last_epoch_sorted & (~MASK);
+
+    printk("%s: [INVALIDAZIONE] Attesa della terminazione del grace period HT: #threads %ld\n", MOD_NAME, grace_period_threads_ht);
+    printk("%s: [INVALIDAZIONE] Attesa della terminazione del grace period lista ordinata: #threads %ld\n", MOD_NAME, grace_period_threads_sorted);
+
+sleep_again:
+
+    wait_event_interruptible(the_queue, (gp->standing_ht[index_ht] >= grace_period_threads_ht) && (gp->standing_sorted[index_sorted] >= grace_period_threads_sorted));
+
+    if((gp->standing_ht[index_ht] >= grace_period_threads_ht) && (gp->standing_sorted[index_sorted] >= grace_period_threads_sorted))
+    {
+        printk("%s: [ERRORE] Il thread va nuovamente a dormire per il blocco %lld\n", MOD_NAME, index);
+        goto sleep_again;
+    }
+
+    gp->standing_sorted[index_sorted] = 0;
+
+    gp->standing_ht[index_ht] = 0;
+
+    if(res_inval->block)
+    {
+        printk("%s: [INVALIDAZIONE] Deallocazione del blocco %lld eliminato con successo\n", MOD_NAME, index);
+        kfree(res_inval->block);
+    }
+
+    return 0;
 }
 
 
@@ -1133,6 +1405,7 @@ int init_ht_valid_and_sorted_list(uint64_t num_data_block) //
 int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint64_t actual_size) //
 {
     int ret;
+    int i;
     uint64_t index;
     size_t size_ht;
     struct soafs_sb_info *sbi;
@@ -1221,6 +1494,27 @@ int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint
         printk("%s: Errore inizializzazione HT e sorted_list\n", MOD_NAME);
         // fai le kfree
         return 1;
+    }
+
+    gp = (struct grace_period *)kmalloc(sizeof(struct grace_period), GFP_KERNEL);
+
+    if(gp == NULL)
+    {
+        printk("%s: Errore inizializzazione grace period\n", MOD_NAME);
+        // fai le kfree
+        return 1;
+    }
+
+    gp->epoch_ht = 0x0;
+    gp->epoch_sorted = 0x0;
+
+    gp->next_epoch_index_ht = 0x1;
+    gp->next_epoch_index_sorted = 0x1;
+
+    for(i=0;i<EPOCHS;i++)
+    {
+        gp->standing_ht[i] = 0x0;
+        gp->standing_sorted[i] = 0x0;
     }
 
     debugging_init();

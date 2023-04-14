@@ -34,11 +34,6 @@
 /* Numero di blocchi liberi con cui inizializzo la free_block_list */
 #define SIZE_INIT 4
 
-/* Maschera di bit per recuperare la validità del blocco */
-#define MASK_VALID 0x8000000000000000
-/* Maschera di bit per recuperare la validità del blocco */
-#define MASK_POS 0x0fffffffffffffff
-
 
 
 /*

@@ -33,6 +33,9 @@ int restore[HACKED_ENTRIES] = {[0 ... (HACKED_ENTRIES-1)] -1};
  */
 static DEFINE_MUTEX(free_list_mutex);
 
+/* Questo mutex mi consente di avere una sola invalidazione alla volta */
+static DEFINE_MUTEX(invalidate_mutex);
+
 
 
 static int check_offset(int offset, struct soafs_sb_info *sbi)
@@ -144,7 +147,7 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
 
     entry = &(hash_table_valid[i]);
 
-    epoch = &(entry->epoch);
+    epoch = &(gp->epoch_ht);
 
     my_epoch = __sync_fetch_and_add(epoch,1);
 
@@ -153,7 +156,7 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
     {
         printk("%s: E' stata richiesta la lettura del blocco %lld ma il blocco non è valido\n", MOD_NAME, offset);
         index = (my_epoch & MASK) ? 1 : 0;
-        __sync_fetch_and_add(&entry->standing[index],1);
+        __sync_fetch_and_add(&(gp->standing_ht[index]),1);
         return -ENODATA;
     }
 
@@ -161,7 +164,7 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
 
 	index = (my_epoch & MASK) ? 1 : 0;
 
-	__sync_fetch_and_add(&entry->standing[index],1);    
+	__sync_fetch_and_add(&(gp->standing_ht[index]),1);    
 
     if(msg_block == NULL)
     {
@@ -434,13 +437,13 @@ retry:
 
 //TODO: Implementa la system call
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
-__SYSCALL_DEFINEx(1, _invalidate_data, int, offset){
+__SYSCALL_DEFINEx(1, _invalidate_data, uint64_t, offset){
 #else
-asmlinkage int sys_invalidate_data(int offset){
+asmlinkage int sys_invalidate_data(uint64_t offset){
 #endif
 
     int ret;
-    int log;
+    struct soafs_sb_info *sbi;
 
     LOG_SYSTEM_CALL("invalidate_data");
 
@@ -452,9 +455,42 @@ asmlinkage int sys_invalidate_data(int offset){
         return -ENODEV;
     }
 
-    log = ilog2(offset);
+    sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
 
-    printk("%s: Il valore del logaritmo pari a %d.\n", MOD_NAME, log);
+    /* Faccio un controllo sull'indice del blocco passato come parametro */
+    if( check_offset(offset, sbi) )
+    {
+        LOG_PARAM_ERR("get_data");
+        return -EINVAL;
+    }
+
+    /*
+     * Faccio un controllo sulla validità del blocco di cui 
+     * si vuole effettuare l'invalidazione.
+     */
+    if(!check_bit(offset))
+    {
+        printk("%s: E' stata richiesta l'invalidazione del blocco %lld ma il blocco non è valido\n", MOD_NAME, offset);
+        return -ENODATA;
+    }
+
+    /* Prendo il mutex per eseguire il processo di invalidazione */
+    mutex_lock(&invalidate_mutex);
+
+    /* Eseguo l'invalidazione del blocco richiesto */
+    ret = invalidate_block(offset);   
+
+    if(ret)
+    {
+        printk("%s: [ERRORE] L'invalidazione del blocco %lld non è stata eseguita con successo\n", MOD_NAME, offset);
+        mutex_unlock(&invalidate_mutex);
+        return -ENODATA;
+    }
+
+    printk("%s: [SUCCESSO] L'invalidazione del blocco %lld è stata eseguita con successo\n", MOD_NAME, offset);
+
+    /* Rilascio il mutex per permettere successive invalidazioni */
+    mutex_unlock(&invalidate_mutex);
 
     return 0;
 	

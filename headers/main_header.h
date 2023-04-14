@@ -49,6 +49,11 @@
 /* Errore KMALLOC */
 #define LOG_KMALLOC_ERR(system_call)                                                            \
     printk("%s: [%s] si è verificato un errore nell'allocazione della memoria con la kmalloc()\n", MOD_NAME, system_call)
+
+struct result_inval {
+    int code;
+    struct block *block;
+};
                                                 
 
 #endif
