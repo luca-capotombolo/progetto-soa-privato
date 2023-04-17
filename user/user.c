@@ -9,6 +9,7 @@
 
 #define NUM_DATA_BLOCK 2
 #define MSG_SIZE 4096
+#define _GNU_SOURCE
 
 void get_data(char *msg, size_t size, uint64_t offset)
 {
@@ -23,7 +24,7 @@ void get_data(char *msg, size_t size, uint64_t offset)
     memset(msg, 0, 4000);
 }
 
-void put_data(char *msg)
+void put_data(const char *msg)
 {
 
     int ret;
@@ -31,6 +32,40 @@ void put_data(char *msg)
     ret = syscall(174, msg, strlen(msg) + 1);
 
     printf("Valore di ritorno della system call - %d\n", ret);
+}
+
+void read_file()
+{
+    char msg_read[4000];
+    int fd;
+    int ret;
+
+    memset(msg_read, 0, 4000);
+
+    fd = open("/home/cap/Scrivania/progetto-soa/privato/progetto-soa-privato/file-system/mount/the-file", O_RDWR);
+
+    if(fd == -1)
+    {
+        printf("Errore apertura del file\n");
+        perror("Errore:");
+        return;
+    }
+
+    printf("fd = %d\n", fd);
+
+    ret = read(fd, (void *)msg_read, 4000);
+
+    if(ret==-1)
+    {
+        perror("Errore:");
+        return;
+    }
+
+    printf("Valore restituito: %d\n", ret);
+
+    printf("Messaggi letti:\n%s", msg_read);
+
+    close(fd);
 }
 
 int main(int argc, char** argv){
@@ -41,11 +76,14 @@ int main(int argc, char** argv){
     const char * str1 = "Nuovo messaggio 1";
     const char * str2 = "Nuovo messaggio 2";
     const char * str3 = "Nuovo messaggio 3";
+
+/*
     char *msg;
 
     msg = (char *)malloc(4000);
 
     memset(msg, 0, 4000);
+
 
     get_data(msg, 4000, 0);
 
@@ -54,10 +92,22 @@ int main(int argc, char** argv){
     get_data(msg, 4000, 128);
 
     get_data(msg, 4000, 192);
-
+*/
 /* ---------------------------------------------------------------------------------------- */
 
+    read_file();
+
+    put_data(str1);
+
+    read_file();
+
     put_data(str2);
+
+    read_file();
+
+    put_data(str3);
+
+    read_file();
 
 /*
     msg = (char *)malloc(4000);

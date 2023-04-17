@@ -1,6 +1,7 @@
 #include <linux/fs.h>
 #include <linux/buffer_head.h>
 #include <linux/string.h>
+#include <linux/slab.h>
 
 #include "../headers/main_header.h"
 
@@ -8,18 +9,118 @@
 ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t * off) {
 
     struct block *curr;
+    size_t bytes_copied;                /* Numero di bytes dei messaggi che sono stati già copiati */
+    size_t byte_to_copy_iter;           /* Numero di bytes che devono essere copiati nella iterazione corrente */
+    size_t len_msg;                     /* Dimensione del messaggio su cui si sta attualmente iteranod */
+    char *msg_to_copy;                  /* Messaggio che deve essere restituito al'utente */
+    unsigned long ret;
+    
+    printk("%s: E' stata invocata la funzione di lettura con la dimensione richiesta pari a %ld.", MOD_NAME, len);
+
+    if(*off)
+    {
+        return 0;
+    }
 
     //TODO: Includilo nel grace period
 
-    printk("%s: E' stata invocata la funzione di lettura con dimensione richiesta pari a %ld.", MOD_NAME, len);
-
-    printk("%s: Il valore dell'offset è pari a %lln\n", MOD_NAME, off);
-
     curr = head_sorted_list;
 
+    if(curr == NULL)
+    {
+        printk("%s: Attualmente non ci sono messaggi da consegnare\n", MOD_NAME);
+        return 0;
+    }
+
+    bytes_copied = 0;
+
+    msg_to_copy = (char *)kzalloc(len, GFP_KERNEL);
+
+    if(msg_to_copy == NULL)
+    {
+        printk("%s: Errore esecuzione kzalloc() durante l'esecuzione della read()\n", MOD_NAME);
+        // TODO: terminazione grace period
+        return -EIO;
+    }
+
+    while(curr != NULL)
+    {
+
+        if(bytes_copied > len)
+        {
+            printk("%s: [ERRORE] Quantità di byte copiati non valida\n", MOD_NAME);
+            return -EIO;
+        }  
+
+        if(bytes_copied == len)
+        {
+            /* La quantità di richiesta dall'utente è stata copiata con successo */
+            printk("%s: Il contenuto del device richiesto è stato letto con successo\n", MOD_NAME);
+            break;
+        }
     
-    
-    return 1;
+        len_msg = strlen(curr->msg);
+
+        if( (bytes_copied + len_msg + 1) >= len)
+        {
+            byte_to_copy_iter = len - bytes_copied - 1;                            /* Tengo conto anche del terminatore di stringa */
+
+            if(byte_to_copy_iter > 0)
+            {
+                strncpy(msg_to_copy + bytes_copied, curr->msg, byte_to_copy_iter);
+            }
+
+            bytes_copied += byte_to_copy_iter + 1;
+
+            msg_to_copy[bytes_copied - 1] = '\0';
+
+            break;
+        }
+        else
+        {
+            byte_to_copy_iter = len_msg;
+
+            if(len_msg == 0)
+            {
+                printk("%s: Messaggio vuoto\n", MOD_NAME);
+                curr = curr->sorted_list_next;
+                continue;
+            }
+
+            strncpy(msg_to_copy + bytes_copied, curr->msg, byte_to_copy_iter);
+
+            bytes_copied += byte_to_copy_iter + 1;
+
+            msg_to_copy[bytes_copied - 1] = '\n';      
+        }
+
+        curr = curr->sorted_list_next;
+    }
+
+    if(curr == NULL)
+    {
+        /* EOF: Ho iterato su tutti i messaggi validi */
+        printk("%s: Il contenuto del device è stato letto completamente con successo\n", MOD_NAME);
+    }
+
+    //TODO: Fine del grace period
+
+    printk("%s: Dimensione del messaggio da consegnare all'utente è pari a %ld\n", MOD_NAME, strlen(msg_to_copy) + 1);
+    printk("%s Numero di bytes che sono stati letti dal device è pari a %ld\n", MOD_NAME, bytes_copied);
+
+    if(bytes_copied > 0)
+    {
+        ret = copy_to_user(buf, msg_to_copy, bytes_copied);
+    }
+    else
+    {
+        printk("%s: [ERRORE] Il numero di byte copiati dal device è pari a 0\n", MOD_NAME);
+        ret = 0;
+    }
+
+    *off = 1;
+
+    return len - ret;
 
 }
 
