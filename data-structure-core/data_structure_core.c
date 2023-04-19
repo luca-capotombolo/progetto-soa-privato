@@ -15,7 +15,6 @@ uint64_t num_block_free_used = 0;
 uint64_t pos = 0;
 uint64_t**bitmask = NULL;
 int x = 0;
-uint64_t empty_actual_size = 0;
 struct grace_period *gp = NULL;
 
 /*
@@ -674,7 +673,7 @@ int get_bitmask_block(void) //
      * lista. In questo modo, riesco a gestire meglio la
      * quantità di memoria utilizzata. 
      */
-    count = empty_actual_size;
+    count = sbi->update_list_size;
 
 
     /*
@@ -830,8 +829,6 @@ int init_free_block_list(uint64_t *index_free, uint64_t actual_size) //
     num_block_free_used = actual_size;
 
     pos = index_free[actual_size - 1] + 1;
-
-    empty_actual_size = actual_size;
 
     printk("%s: Il numero di blocchi liberi utilizzati è pari a %lld.\n", MOD_NAME, num_block_free_used);
 

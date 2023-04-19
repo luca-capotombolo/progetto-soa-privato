@@ -109,12 +109,14 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     sbi->num_block = sb_disk->num_block;
     sbi->num_block_free = sb_disk->num_block_free;
     sbi->num_block_state = sb_disk->num_block_state;
+    sbi->update_list_size = sb_disk->update_list_size;
 
     sb->s_fs_info = sbi;
 
     printk("%s: Il numero di blocchi del dispositivo è pari a %lld.\n", MOD_NAME, sb_disk->num_block);
     printk("%s: Il numero di blocchi liberi del dispositivo è pari a %lld.\n", MOD_NAME, sb_disk->num_block_free);
     printk("%s: Il numero di blocchi di stato del dispositivo è pari a %lld.\n", MOD_NAME, sb_disk->num_block_state);
+    printk("%s: Il numero di blocchi massimo da caricare all'aggiornamento è pari a %lld.\n", MOD_NAME, sb_disk->update_list_size);
     
     /* Recupero il root inode. */
     root_inode = iget_locked(sb, 0);
@@ -174,15 +176,227 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
 
 
 
+static int set_free_block(void)
+{
+    struct soafs_sb_info *sbi;
+    struct buffer_head *bh;
+    struct soafs_super_block * b;
+    uint64_t actual_size;
+    uint64_t *free_blocks;
+    uint64_t index;
+    uint64_t num_block_data;
+    uint64_t counter;
+    uint64_t update_list_size;
+
+    sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
+
+    update_list_size = sbi->update_list_size;
+    
+    free_blocks = (uint64_t *)kzalloc(sizeof(uint64_t) * update_list_size, GFP_KERNEL);
+
+    if(free_blocks == NULL)
+    {
+        printk("%s: Errore esecuzione della kzalloc() nella ricerca dei blocchi liberi\n", MOD_NAME);
+        return 1;
+    }
+
+    printk("%s: Inizio ricerca blocchi liberi (al massimo %lld)...\n", MOD_NAME, update_list_size);
+
+    bh = bh = sb_bread(sb_global, SOAFS_SB_BLOCK_NUMBER);    
+
+    if(bh == NULL)
+    {
+        printk("%s: [ERRORE] La lettura del superblocco è terminata senza successo\n", MOD_NAME);
+        return 1;
+    }
+
+    b = (struct soafs_super_block *)bh->b_data;
+
+    b->num_block_free = b->num_block_free - num_block_free_used;
+
+    if((num_block_free_used == sbi->num_block_free) && (head_free_block_list == NULL))
+    {
+        printk("%s: I blocchi liberi a disposizione sono terminati\n", MOD_NAME);
+        b->actual_size = 0;
+        return 0;
+    }
+
+    num_block_data = sbi->num_block - 2 - sbi->num_block_state;
+
+    counter = 0;
+
+    for(index = 0; index < num_block_data; index++)
+    {
+        if(counter == update_list_size)
+        {
+            break;
+        }
+
+        ret = check_bit(index);
+
+        if(!ret)
+        {
+            printk("%s: Blocco libero #%lld\n", index);
+            
+            free_blocks[counter] = index;
+
+            counter++;
+        }
+
+    }
+
+    printk("%s: Numero di blocchi liberi trovati %lld\n", MOD_NAME, counter);
+
+    b->actual_size = counter;
+    
+    for(index = 0; index < counter; index++)
+    {
+        b-> index_free[index] = free_blocks[index];
+    }
+
+    sync dirty buffer(bh);
+    
+    brelse(bh);
+
+    kfree(free_blocks);
+
+    return 0;   
+    
+}
+
+
+
+
+int flush_bitmask(void)
+{
+    struct soafs_sb_info *sbi;
+    struct buffer_head *bh;
+    uint64_t counter;
+    uint64_t num_block_state;
+
+    sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
+
+    num_block_state = sbi->num_block_state;
+
+    counter = 0;
+
+    while(counter < num_block_state)
+    {
+        bh = sb_bread(sb_global, 2 + counter);
+
+        if(bh == NULL)
+        {
+            printk("%s: Errore nella lettura del blocco di stato #%lld\n", MOD_NAME, counter);
+            return 1;
+        }
+
+        bh->b_data = bitmask[counter];
+
+        sync dirty buffer(bh);
+
+        printk("%s: Flush dei dati per il blocco di stato #%lld avvenuto con successo\n", MOD_NAME, counter);        
+        
+        counter++;
+
+        brelse(bh);
+    }
+
+    return 0;
+}
+
+
+
+int flush_valid_block(void)
+{
+    struct buffer_head *bh;
+    struct block *curr;
+    struct soafs_sb_info *sbi;
+    struct soafs_block *b;
+    uint64_t index;
+    uint64_t num_block_state;
+
+    curr = head_sorted_list;
+
+    if(curr == NULL)
+    {
+        printk("%s: Non ci sono messaggi validi da riportare\n", MOD_NAME);
+        return 0;
+    }
+
+    sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
+
+    num_block_state = sbi->num_block_state;
+    
+    while(curr != NULL)
+    {
+        index = curr->block_index;
+    
+        printk("%s: Il blocco con indice %lld deve essere riportato su device\n", MOD_NAME, index);
+
+        bh = sb_bread(sb_global, 2 + num_block_state + index);
+
+        b = bh->b_data;
+
+        curr = curr->sorted_list_next;
+
+        brelse(bh);
+    }
+
+    printk("%s: I blocchi sono stati riportati correttamente su device\n", MOD_NAME);
+    
+    return 0;
+}
+
 static void soafs_kill_sb(struct super_block *sb)
 {
+
+    int ret;
+    int n;
+
+    is_mounted = 0;
+    n = 0;
+
+retry_flush_bitmask:
+
+    ret = flush_bitmask();
+
+    if(ret)
+    {
+        n++;
+        printk("%s: Tentativo numero %d fallito per il flush della bitmask\n", MOD_NAME);
+        goto retry_flush_bitmask;
+    }
+
+    n = 0;
+
+retry_set_free_block:
+
+    ret = set_free_block();
+
+    if(ret)
+    {
+        n++;
+        printk("%s: Tentativo numero %d fallito per il settaggio dei blocchi liberi\n", MOD_NAME);
+        goto retry_set_free_block;
+    }
+
+    n = 0;
+
+retry_umount:
+
+    ret = flush_valid_block();
+
+    if(ret)
+    {
+        n++;
+        printk("%s: Tentativo numero %d fallito per il salvataggio dei blocchi validi\n", MOD_NAME);
+        goto retry_umount;
+    }
 
     kill_block_super(sb);
 
     printk("%s: Il File System 'soafs' è stato smontato con successo.\n", MOD_NAME);
-
-    /* Registro il fatto che il file system è stato smontato. */
-    is_mounted = 0;
+    
 
 }
 

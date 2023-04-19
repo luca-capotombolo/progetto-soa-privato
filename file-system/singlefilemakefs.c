@@ -22,24 +22,22 @@ int main(int argc, char *argv[])
     int i;
     int j;
     int n;
-	ssize_t ret;
-
 	char *block_padding;
-	char *file_body = "Blocco #%d.";
-
-    uint64_t metadata = 0x0000000000000000;
-    uint64_t nblocks;
-    uint64_t nblocks_state;
-    uint64_t nblocks_data;
-    uint64_t actual_size;
-    uint64_t *block_state;
-
+	char *file_body = "Blocco #%d.";    
+    ssize_t ret;
+    uint64_t metadata = 0x0000000000000000;     /* Posizione del blocco nella lista ordinata */    
+    uint64_t nblocks;                           /* Numero totale di blocchi */    
+    uint64_t nblocks_state;                     /* Numero totale blocchi di stato */    
+    uint64_t nblocks_data;                      /* Numero totale dei blocchi di dati */    
+    uint64_t actual_size;                       /* Dimensione effettiva dell'array dei blocchi liberi */    
+    uint64_t update_list_size;                  /* Numero massimo di blocchi da caricare nella lista ad ogni aggiornamento */    
+    uint64_t *block_state;                      /* Maschera di bit */
 	struct soafs_super_block sb;
 	struct soafs_inode file_inode;
     struct soafs_block *block = NULL;
 
-	if (argc != 4) {
-		printf("./singlefilemakefs <device> <Numero-totale-di-blocchi-senza-blocchi-di-stato> <actual-size>\n");
+	if (argc != 5) {
+		printf("./singlefilemakefs <device> <Numero-totale-di-blocchi-senza-blocchi-di-stato> <update_list_size> <actual-size>\n");
 		return -1;
 	}
 
@@ -51,12 +49,31 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 
-    /* Dimensione effettiva dell'array */
-    actual_size = atoi(argv[3]);
+    update_list_size = atoi(argv[3]);
 
+    /*
+     * Verifico se si sta chiedendo di caricare
+     * nella lista dei blocchi liberi un numero
+     * di blocchi che è maggiore della dimensione
+     * massima della lista.
+     */
+    if(update_list_size > SIZE_INIT)
+    {
+        printf("Il numero massimo degli elementi per l'aggiornamento %ld è strettamente maggiore di %d\n", update_list_size, SIZE_INIT);
+        return -1;
+    }
+
+    actual_size = atoi(argv[4]);
+
+    /*
+     * Verifico se si sta chiedendo di caricare
+     * nella lista dei blocchi liberi un numero
+     * di blocchi che è maggiore della dimensione
+     * massima della lista.
+     */
     if(actual_size > SIZE_INIT)
     {
-        printf("Il numero degli elementi dell'array %ld è strettamente maggiore di %d\n", actual_size, SIZE_INIT);
+        printf("La dimensione richiesta %ld è maggiore della dimensione massima dell'array %d\n", actual_size, SIZE_INIT);
         return -1;
     }
 
@@ -98,6 +115,7 @@ int main(int argc, char *argv[])
     
     printf("Il nome del device è: %s\n", argv[1]);
     printf("La dimensione massima dell'array è pari a %d\n", SIZE_INIT);
+    printf("La dimensione dell'aggiornamento della lista dei blocchi liberi è pari a %ld\n", update_list_size);
     printf("La dimensione effettiva dell'array è pari a %ld\n", actual_size);
     printf("Numero di blochi del device: %ld\n", nblocks);
     printf("Numero di blocchi di stato: %ld\n", nblocks_state);
@@ -118,13 +136,20 @@ int main(int argc, char *argv[])
     sb.num_block_state = nblocks_state;
 
     /* Dimensione effettiva dell'array */
-    sb.actual_size = actual_size;
+    sb.update_list_size = update_list_size;
 
-    /* inserisci i primi actual_size blocchi liberi */
-    sb.index_free[0] = 1;
-    sb.index_free[1] = 2;
-    //sb.index_free[1] = 65; 
-    //sb.index_free[1] = 165;   
+    /*
+     * inserisci i primi actual_size blocchi liberi.
+     * In questa versione, tutti i blocchi sono
+     * inizialmente liberi.
+     */
+    for(int k=0; k<actual_size; k++)
+    {
+        sb.index_free[k] = k;
+    }
+
+    /* Inserisco la dimensione effettiva dell'array */
+    sb.actual_size = actual_size;  
 
 	ret = write(fd, (char *)&sb, sizeof(sb));
 
@@ -169,6 +194,7 @@ int main(int argc, char *argv[])
 	nbytes = SOAFS_BLOCK_SIZE - sizeof(file_inode);
 
 	block_padding = malloc(nbytes);
+
     if(block_padding == NULL)
     {
         printf("Errore nell'allocazione della memoria per i byte di padding per il blocco contenente l'inode del file.\n");
@@ -187,9 +213,7 @@ int main(int argc, char *argv[])
 	printf("Il blocco contenente l'inode del file è stato scritto con successo.\n");
     fflush(stdout);
 
-	/* 
-     * Popolo i blocchi di stato del device.
-     */
+	/* Popolo i blocchi di stato del device */
     for(i=0; i<nblocks_state; i++)
     {
         block_state = (int64_t *)malloc(sizeof(int64_t) * 512);
@@ -202,12 +226,8 @@ int main(int argc, char *argv[])
 
         for(j=0;j<512;j++)
         {
-            if(j == 0 || j == 1 || j == 2 || j == 3 || j == 4)
-                // block_state[j]= 0xfffffffffffffffe;
-                block_state[j] = 0x0000000000000001;
-            else
-                // block_state[j]= 0xffffffffffffffff;
-                block_state[j] = 0x0000000000000000;
+            /* Inizialmente sono tutti liberi */
+            block_state[j] = 0x0000000000000000;
         }
 
 	    ret = write(fd, (void *)block_state, SOAFS_BLOCK_SIZE);

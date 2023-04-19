@@ -46,9 +46,10 @@ struct soafs_super_block {
     uint64_t num_block;                                                     // NUMERO TOTALE DI BLOCCHI DEL DEVICE
     uint64_t num_block_free;                                                // NUMERO TOTALE DEI BLOCCHI LIBERI AL MONTAGGIO
     uint64_t num_block_state;                                               // NUMERO TOTALE DEI BLOCCHI DI STATI
+    uint64_t update_list_size;                                              // NUMERO MASSIMO DI NUOVI BLOCCHI DA CARICARE
     uint64_t actual_size;                                                   // ACTUAL_SIZE <= SIZE_INIT
     uint64_t index_free[SIZE_INIT];                                         // SOTTOINSIEME DEI BLOCCHI LIBERI AL MONTAGGIO
-	char padding[SOAFS_BLOCK_SIZE - ((5 + SIZE_INIT) * sizeof(uint64_t))];   // BIT DI PADDING
+	char padding[SOAFS_BLOCK_SIZE - ((5 + SIZE_INIT) * sizeof(uint64_t))];  // BIT DI PADDING
 };
 
 
@@ -85,6 +86,7 @@ struct soafs_sb_info {
     uint64_t num_block;
     uint64_t num_block_free;
     uint64_t num_block_state;
+    uint64_t update_list_size;
 };
 
 

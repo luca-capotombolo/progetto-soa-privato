@@ -14,6 +14,10 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
     size_t len_msg;                     /* Dimensione del messaggio su cui si sta attualmente iteranod */
     char *msg_to_copy;                  /* Messaggio che deve essere restituito al'utente */
     unsigned long ret;
+    //grace period
+    unsigned long my_epoch;
+    unsigned long * epoch;
+    int index;
     
     printk("%s: E' stata invocata la funzione di lettura con la dimensione richiesta pari a %ld.", MOD_NAME, len);
 
@@ -23,6 +27,10 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
     }
 
     //TODO: Includilo nel grace period
+
+    epoch = &(gp->epoch_sorted);
+
+    my_epoch = __sync_fetch_and_add(epoch,1);
 
     curr = head_sorted_list;
 
@@ -104,6 +112,10 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
     }
 
     //TODO: Fine del grace period
+
+    index = (my_epoch & MASK) ? 1 : 0;
+
+    __sync_fetch_and_add(&(gp->standing_sorted[index]),1);
 
     printk("%s: Dimensione del messaggio da consegnare all'utente è pari a %ld\n", MOD_NAME, strlen(msg_to_copy) + 1);
     printk("%s Numero di bytes che sono stati letti dal device è pari a %ld\n", MOD_NAME, bytes_copied);
