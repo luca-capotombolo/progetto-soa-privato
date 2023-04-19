@@ -1,1 +1,0 @@
-cmd_/home/cap/Scrivania/progetto-soa/privato/progetto-soa-privato/Module.symvers := sed 's/\.ko$$/\.o/' /home/cap/Scrivania/progetto-soa/privato/progetto-soa-privato/modules.order | scripts/mod/modpost -m -a  -o /home/cap/Scrivania/progetto-soa/privato/progetto-soa-privato/Module.symvers -e -i Module.symvers   -T -

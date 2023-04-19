@@ -1,1 +1,0 @@
-cmd_/home/cap/Scrivania/progetto-soa/privato/progetto-soa-privato/modules.order := {   echo /home/cap/Scrivania/progetto-soa/privato/progetto-soa-privato/my_module.ko; :; } | awk '!x[$$0]++' - > /home/cap/Scrivania/progetto-soa/privato/progetto-soa-privato/modules.order
