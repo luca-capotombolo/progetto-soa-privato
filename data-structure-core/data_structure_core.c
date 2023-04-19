@@ -451,7 +451,7 @@ int init_bitmask(void) //
         return 1;
     }
 
-    printk("%s: Inizio inizializzazione bitmask...\nNumero entry pari a %lld\n", MOD_NAME, num_block_state);
+    printk("%s: Inizio inizializzazione bitmask...Numero entry pari a %lld\n", MOD_NAME, num_block_state);
 
     bitmask = (uint64_t **)kzalloc(num_block_state * sizeof(uint64_t *), GFP_KERNEL);
 
@@ -766,7 +766,7 @@ int insert_free_list(uint64_t index) //
 
     if(new_item==NULL)
     {
-        printk("%s: Errore malloc() sorted_list.", MOD_NAME);
+        printk("%s: [ERRORE INIT FREE LIST] Errore malloc() sorted_list.", MOD_NAME);
         return 1;
     }
 
@@ -774,17 +774,19 @@ int insert_free_list(uint64_t index) //
 
     if(head_free_block_list == NULL)
     {
+        printk("%s: [INIT FREE LIST] Inserimento in testa blocco #%lld\n", MOD_NAME, index);
         head_free_block_list = new_item;
-        new_item -> next = NULL;
+        head_free_block_list -> next = NULL;
     }
     else
     {
+        printk("%s: [INIT FREE LIST] Inserimento non in testa blocco #%lld\n", MOD_NAME, index);
         old_head = head_free_block_list;
         head_free_block_list = new_item;
-        new_item -> next = old_head;
+        head_free_block_list -> next = old_head;
     }
 
-    printk("%s: Inserito il blocco %lld nella lista dei blocchi liberi.\n", MOD_NAME, index);
+    printk("%s: [INIT FREE LIST] Inserito il blocco %lld nella lista dei blocchi liberi.\n", MOD_NAME, index);
 
     asm volatile("mfence");
 
@@ -805,17 +807,21 @@ int init_free_block_list(uint64_t *index_free, uint64_t actual_size) //
 
     if(SIZE_INIT < actual_size)
     {
-        printk("%s: Errore nella dimensione dell'array.\nACTUAL_SIZE = %lld\tSIZE_INIT = %d\n", MOD_NAME, actual_size, SIZE_INIT);
+        printk("%s: [ERRORE INIT FREE LIST] Errore nella dimensione dell'array.\nACTUAL_SIZE = %lld\tSIZE_INIT = %d\n", MOD_NAME, actual_size, SIZE_INIT);
         return 1;
     }
 
     for(index=0; index<actual_size;index++)
     {
+        printk("%s: [INIT FREE LIST] Inserimento del blocco %lld all'interno della lista...\n", MOD_NAME, index_free[index]);
 
         ret = insert_free_list(index_free[index]);
+
+        printk("%s: [INIT FREE LIST] Blocco #%lld inserito correttamente all'interno della lista\n", MOD_NAME, index_free[index]);
+
         if(ret)
         {
-            printk("%s: Errore kzalloc() free_list indice %lld.\n", MOD_NAME, index);
+            printk("%s: [ERRORE INIT FREE LIST] Errore kzalloc() free_list indice %lld.\n", MOD_NAME, index);
             for(roll_index=0; roll_index<index;roll_index++)
             {
                 roll_bf = head_free_block_list->next;
@@ -830,9 +836,9 @@ int init_free_block_list(uint64_t *index_free, uint64_t actual_size) //
 
     pos = index_free[actual_size - 1] + 1;
 
-    printk("%s: Il numero di blocchi liberi utilizzati è pari a %lld.\n", MOD_NAME, num_block_free_used);
+    printk("%s: [INIT FREE LIST] Il numero di blocchi liberi utilizzati è pari a %lld.\n", MOD_NAME, num_block_free_used);
 
-    printk("%s: Il valore di pos è pari a %lld.\n", MOD_NAME, pos);
+    printk("%s: [INIT FREE LIST] Il valore di pos è pari a %lld.\n", MOD_NAME, pos);
 
     check_consistenza();
 
@@ -1430,6 +1436,8 @@ int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint
     }
 
     sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
+
+    printk("%s: Valore di 'actual_size' è pari a %lld\n", MOD_NAME, actual_size);
 
     if( (actual_size < 0) || (sbi->num_block_free < 0) )
     {

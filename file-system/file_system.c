@@ -196,17 +196,17 @@ static int set_free_block(void)
 
     if(free_blocks == NULL)
     {
-        printk("%s: Errore esecuzione della kzalloc() nella ricerca dei blocchi liberi\n", MOD_NAME);
+        printk("%s: [ERRORE FREE BLOCK] Errore esecuzione della kzalloc() nella ricerca dei blocchi liberi\n", MOD_NAME);
         return 1;
     }
 
-    printk("%s: Inizio ricerca blocchi liberi (al massimo %lld)...\n", MOD_NAME, update_list_size);
+    printk("%s: [FREE BLOCK] Inizio ricerca blocchi liberi (al massimo %lld)...\n", MOD_NAME, update_list_size);
 
     bh = sb_bread(sb_global, SOAFS_SB_BLOCK_NUMBER);    
 
     if(bh == NULL)
     {
-        printk("%s: [ERRORE] La lettura del superblocco è terminata senza successo\n", MOD_NAME);
+        printk("%s: [ERRORE FREE BLOCK] La lettura del superblocco è terminata senza successo\n", MOD_NAME);
         return 1;
     }
 
@@ -216,8 +216,18 @@ static int set_free_block(void)
 
     if((num_block_free_used == sbi->num_block_free) && (head_free_block_list == NULL))
     {
-        printk("%s: I blocchi liberi a disposizione sono terminati\n", MOD_NAME);
+        printk("%s: [FREE BLOCK] I blocchi liberi a disposizione sono terminati\n", MOD_NAME);
+
         b->actual_size = 0;
+
+        mark_buffer_dirty(bh);
+
+        ret = sync_dirty_buffer(bh);
+    
+        brelse(bh);
+
+        kfree(free_blocks);
+
         return 0;
     }
 
@@ -245,7 +255,7 @@ static int set_free_block(void)
 
     }
 
-    printk("%s: Numero di blocchi liberi trovati %lld\n", MOD_NAME, counter);
+    printk("%s: [FREE BLOCK] Numero di blocchi liberi trovati %lld\n", MOD_NAME, counter);
 
     b->actual_size = counter;
     
@@ -375,24 +385,27 @@ int flush_valid_block(void)
 
 void free_all_memory(void)
 {
-    struct block_free *curr_bf;
     struct block_free *next_bf;
-    struct block *curr_b;
     struct block *next_b;
     int index;
 
-    curr_bf = head_free_block_list;
-
-    if(curr_bf!=NULL)
+    if(head_free_block_list!=NULL)
     {
-        while(curr_bf!=NULL)
+        printk("%s: [FREE MEMORY] La lista dei blocchi liberi non è vuota... inizio deallocazione in corso...\n", MOD_NAME);
+        while(head_free_block_list!=NULL)
         {
-            next_bf = curr_bf->next;
+            next_bf = head_free_block_list->next;
+
+            printk("%s: [FREE MEMORY] Deallocazione blocco #%lld...\n", MOD_NAME, head_free_block_list->block_index);
         
-            kfree(curr_bf);
+            kfree(head_free_block_list);
+
+            printk("%s: [FREE MEMORY] Deallocazione blocco #%lld avvenuta con successo\n", MOD_NAME, head_free_block_list->block_index);
     
-            curr_bf = next_bf;
+            head_free_block_list = next_bf;
         }
+
+        printk("%s: [FREE MEMORY] Deallocazione dei blocchi dalla lista libera completata con successo\n", MOD_NAME);        
     }
 
     for(index=0;index<x;index++)
@@ -400,19 +413,37 @@ void free_all_memory(void)
         (&hash_table_valid[index])->head_list = NULL;
     }
 
-    curr_b = head_sorted_list;
-
-    if(curr_b!=NULL)
+    if(head_sorted_list != NULL)
     {
-        while(curr_b!=NULL)
+
+        printk("%s: [FREE MEMORY] La lista dei blocchi ordinati non è vuota... inizio deallocazione in corso...\n", MOD_NAME);
+
+        while(head_sorted_list != NULL)
         {
-            next_b = curr_b->sorted_list_next;
+            next_b = head_sorted_list->sorted_list_next;
+
+            printk("%s: [FREE MEMORY] Deallocazione blocco #%lld...\n", MOD_NAME, head_sorted_list->block_index);
         
-            kfree(curr_b);
+            kfree(head_sorted_list);
+
+            printk("%s: [FREE MEMORY] Deallocazione blocco #%lld avvenuta con successo\n", MOD_NAME, head_sorted_list->block_index);
     
-            curr_b = next_b;
+            head_sorted_list = next_b;
         }
-    }    
+    
+        printk("%s: [FREE MEMORY] Deallocazione dei blocchi dalla lista ordinata completata con successo\n", MOD_NAME);
+    }
+
+    if(head_free_block_list != NULL)
+    {
+        printk("%s: [ERRORE SMONTAGGIO] La lista dei blocchi liberi non è vuota\n", MOD_NAME);
+    }
+
+    if(head_sorted_list != NULL)
+    {
+        printk("%s: [ERRORE SMONTAGGIO] La lista dei blocchi ordinata non è vuota\n", MOD_NAME);
+    }
+
 }
 
 static void soafs_kill_sb(struct super_block *sb)
@@ -431,7 +462,7 @@ retry_flush_bitmask:
     if(ret)
     {
         n++;
-        printk("%s: Tentativo numero %d fallito per il flush della bitmask\n", MOD_NAME, n);
+        printk("%s: [ERRORE SMONTAGGIO] Tentativo numero %d fallito per il flush della bitmask\n", MOD_NAME, n);
         goto retry_flush_bitmask;
     }
 
@@ -444,7 +475,7 @@ retry_set_free_block:
     if(ret)
     {
         n++;
-        printk("%s: Tentativo numero %d fallito per il settaggio dei blocchi liberi\n", MOD_NAME, n);
+        printk("%s: [ERRORE SMONTAGGIO] Tentativo numero %d fallito per il settaggio dei blocchi liberi\n", MOD_NAME, n);
         goto retry_set_free_block;
     }
 
@@ -457,7 +488,7 @@ retry_umount:
     if(ret)
     {
         n++;
-        printk("%s: Tentativo numero %d fallito per il salvataggio dei blocchi validi\n", MOD_NAME, n);
+        printk("%s: [ERRORE SMONTAGGIO] Tentativo numero %d fallito per il salvataggio dei blocchi validi\n", MOD_NAME, n);
         goto retry_umount;
     }
 
