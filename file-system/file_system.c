@@ -187,7 +187,7 @@ static int set_free_block(void)
     uint64_t counter;
     uint64_t update_list_size;
     int ret;
-
+    
     sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
 
     update_list_size = sbi->update_list_size;
@@ -236,7 +236,7 @@ static int set_free_block(void)
 
         if(!ret)
         {
-            printk("%s: Blocco libero #%lld\n", MOD_NAME, index);
+            printk("%s: [FREE BLOCK] Blocco libero #%lld\n", MOD_NAME, index);
             
             free_blocks[counter] = index;
 
@@ -254,7 +254,9 @@ static int set_free_block(void)
         b-> index_free[index] = free_blocks[index];
     }
 
-    sync_dirty_buffer(bh);
+    mark_buffer_dirty(bh);
+
+    ret = sync_dirty_buffer(bh);
     
     brelse(bh);
 
@@ -299,9 +301,11 @@ int flush_bitmask(void)
             b[i] = bitmask[counter][i];
         }
 
+        mark_buffer_dirty(bh);
+
         sync_dirty_buffer(bh);
 
-        printk("%s: Flush dei dati per il blocco di stato #%lld avvenuto con successo\n", MOD_NAME, counter);        
+        printk("%s: [FLUSH BITMASK] Flush dei dati per il blocco di stato #%lld avvenuto con successo\n", MOD_NAME, counter);        
         
         counter++;
 
@@ -341,7 +345,7 @@ int flush_valid_block(void)
     {
         index = curr->block_index;
     
-        printk("%s: Il blocco con indice %lld deve essere riportato su device\n", MOD_NAME, index);
+        printk("%s: [VALID BLOCK] Il blocco con indice %lld deve essere riportato su device\n", MOD_NAME, index);
 
         bh = sb_bread(sb_global, 2 + num_block_state + index);
 
@@ -350,6 +354,8 @@ int flush_valid_block(void)
         b->pos = pos;
 
         strncpy(b->msg, curr->msg, strlen(curr->msg) + 1);
+
+        mark_buffer_dirty(bh);
 
         sync_dirty_buffer(bh);        
 
@@ -360,9 +366,53 @@ int flush_valid_block(void)
         brelse(bh);
     }
 
-    printk("%s: I blocchi sono stati riportati correttamente su device\n", MOD_NAME);
+    printk("%s: [VALID BLOCK] I blocchi sono stati riportati correttamente su device\n", MOD_NAME);
     
     return 0;
+}
+
+
+
+void free_all_memory(void)
+{
+    struct block_free *curr_bf;
+    struct block_free *next_bf;
+    struct block *curr_b;
+    struct block *next_b;
+    int index;
+
+    curr_bf = head_free_block_list;
+
+    if(curr_bf!=NULL)
+    {
+        while(curr_bf!=NULL)
+        {
+            next_bf = curr_bf->next;
+        
+            kfree(curr_bf);
+    
+            curr_bf = next_bf;
+        }
+    }
+
+    for(index=0;index<x;index++)
+    {
+        (&hash_table_valid[index])->head_list = NULL;
+    }
+
+    curr_b = head_sorted_list;
+
+    if(curr_b!=NULL)
+    {
+        while(curr_b!=NULL)
+        {
+            next_b = curr_b->sorted_list_next;
+        
+            kfree(curr_b);
+    
+            curr_b = next_b;
+        }
+    }    
 }
 
 static void soafs_kill_sb(struct super_block *sb)
@@ -410,6 +460,8 @@ retry_umount:
         printk("%s: Tentativo numero %d fallito per il salvataggio dei blocchi validi\n", MOD_NAME, n);
         goto retry_umount;
     }
+
+    free_all_memory();
 
     kill_block_super(sb);
 
