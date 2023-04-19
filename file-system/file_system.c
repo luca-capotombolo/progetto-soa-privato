@@ -181,12 +181,12 @@ static int set_free_block(void)
     struct soafs_sb_info *sbi;
     struct buffer_head *bh;
     struct soafs_super_block * b;
-    uint64_t actual_size;
     uint64_t *free_blocks;
     uint64_t index;
     uint64_t num_block_data;
     uint64_t counter;
     uint64_t update_list_size;
+    int ret;
 
     sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
 
@@ -202,7 +202,7 @@ static int set_free_block(void)
 
     printk("%s: Inizio ricerca blocchi liberi (al massimo %lld)...\n", MOD_NAME, update_list_size);
 
-    bh = bh = sb_bread(sb_global, SOAFS_SB_BLOCK_NUMBER);    
+    bh = sb_bread(sb_global, SOAFS_SB_BLOCK_NUMBER);    
 
     if(bh == NULL)
     {
@@ -236,7 +236,7 @@ static int set_free_block(void)
 
         if(!ret)
         {
-            printk("%s: Blocco libero #%lld\n", index);
+            printk("%s: Blocco libero #%lld\n", MOD_NAME, index);
             
             free_blocks[counter] = index;
 
@@ -254,7 +254,7 @@ static int set_free_block(void)
         b-> index_free[index] = free_blocks[index];
     }
 
-    sync dirty buffer(bh);
+    sync_dirty_buffer(bh);
     
     brelse(bh);
 
@@ -273,6 +273,8 @@ int flush_bitmask(void)
     struct buffer_head *bh;
     uint64_t counter;
     uint64_t num_block_state;
+    uint64_t *b;
+    int i;
 
     sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
 
@@ -290,9 +292,14 @@ int flush_bitmask(void)
             return 1;
         }
 
-        bh->b_data = bitmask[counter];
+        b = (uint64_t *)bh->b_data;
 
-        sync dirty buffer(bh);
+        for(i = 0; i < 512; i++)
+        {
+            b[i] = bitmask[counter][i];
+        }
+
+        sync_dirty_buffer(bh);
 
         printk("%s: Flush dei dati per il blocco di stato #%lld avvenuto con successo\n", MOD_NAME, counter);        
         
@@ -314,6 +321,7 @@ int flush_valid_block(void)
     struct soafs_block *b;
     uint64_t index;
     uint64_t num_block_state;
+    uint64_t pos;
 
     curr = head_sorted_list;
 
@@ -327,6 +335,8 @@ int flush_valid_block(void)
 
     num_block_state = sbi->num_block_state;
     
+    pos = 0;
+    
     while(curr != NULL)
     {
         index = curr->block_index;
@@ -335,9 +345,17 @@ int flush_valid_block(void)
 
         bh = sb_bread(sb_global, 2 + num_block_state + index);
 
-        b = bh->b_data;
+        b = (struct soafs_block *)bh->b_data;
+
+        b->pos = pos;
+
+        strncpy(b->msg, curr->msg, strlen(curr->msg) + 1);
+
+        sync_dirty_buffer(bh);        
 
         curr = curr->sorted_list_next;
+
+        pos++;
 
         brelse(bh);
     }
@@ -363,7 +381,7 @@ retry_flush_bitmask:
     if(ret)
     {
         n++;
-        printk("%s: Tentativo numero %d fallito per il flush della bitmask\n", MOD_NAME);
+        printk("%s: Tentativo numero %d fallito per il flush della bitmask\n", MOD_NAME, n);
         goto retry_flush_bitmask;
     }
 
@@ -376,7 +394,7 @@ retry_set_free_block:
     if(ret)
     {
         n++;
-        printk("%s: Tentativo numero %d fallito per il settaggio dei blocchi liberi\n", MOD_NAME);
+        printk("%s: Tentativo numero %d fallito per il settaggio dei blocchi liberi\n", MOD_NAME, n);
         goto retry_set_free_block;
     }
 
@@ -389,7 +407,7 @@ retry_umount:
     if(ret)
     {
         n++;
-        printk("%s: Tentativo numero %d fallito per il salvataggio dei blocchi validi\n", MOD_NAME);
+        printk("%s: Tentativo numero %d fallito per il salvataggio dei blocchi validi\n", MOD_NAME, n);
         goto retry_umount;
     }
 

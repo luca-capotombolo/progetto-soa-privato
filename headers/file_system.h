@@ -49,7 +49,7 @@ struct soafs_super_block {
     uint64_t update_list_size;                                              // NUMERO MASSIMO DI NUOVI BLOCCHI DA CARICARE
     uint64_t actual_size;                                                   // ACTUAL_SIZE <= SIZE_INIT
     uint64_t index_free[SIZE_INIT];                                         // SOTTOINSIEME DEI BLOCCHI LIBERI AL MONTAGGIO
-	char padding[SOAFS_BLOCK_SIZE - ((5 + SIZE_INIT) * sizeof(uint64_t))];  // BIT DI PADDING
+	char padding[SOAFS_BLOCK_SIZE - ((6 + SIZE_INIT) * sizeof(uint64_t))];  // BIT DI PADDING
 };
 
 

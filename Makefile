@@ -4,6 +4,7 @@ my_module-objs += main.o ./file-system/file.o ./file-system/dir.o ./file-system/
 
 A = $(shell cat /sys/module/the_usctm/parameters/sys_call_table_address)
 NBLOCKS_FS = 258
+UPDATE_LIST_SIZE = 2
 ACTUAL_SIZE = 2
 
 all:
@@ -22,7 +23,7 @@ get-param:
 
 create-fs:
 	dd bs=4096 count=$(PARAM) if=/dev/zero of=./file-system/image
-	./file-system/singlefilemakefs ./file-system/image $(NBLOCKS_FS) $(ACTUAL_SIZE)
+	./file-system/singlefilemakefs ./file-system/image $(NBLOCKS_FS) $(UPDATE_LIST_SIZE) $(ACTUAL_SIZE)
 
 mount-module:
 	insmod my_module.ko the_syscall_table=$(A)

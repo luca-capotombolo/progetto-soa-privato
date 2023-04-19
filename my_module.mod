@@ -1,0 +1,2 @@
+/home/cap/Scrivania/progetto-soa/privato/progetto-soa-privato/main.o /home/cap/Scrivania/progetto-soa/privato/progetto-soa-privato/./file-system/file.o /home/cap/Scrivania/progetto-soa/privato/progetto-soa-privato/./file-system/dir.o /home/cap/Scrivania/progetto-soa/privato/progetto-soa-privato/./file-system/file_system.o /home/cap/Scrivania/progetto-soa/privato/progetto-soa-privato/lib/scth.o /home/cap/Scrivania/progetto-soa/privato/progetto-soa-privato/./data-structure-core/data_structure_core.o
+
