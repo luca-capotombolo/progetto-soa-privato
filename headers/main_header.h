@@ -19,7 +19,7 @@
 #define LICENSE "GPL"
 
 /* Periodo per il kernel thread */
-#define PERIOD 10
+#define PERIOD 1000000000
 
 /* Maschera per recuperare il valore dell'epoca */
 #define MASK 0X8000000000000000
@@ -32,11 +32,11 @@
 
 /* Debugging per le system calls */
 #define LOG_SYSTEM_CALL(system_call)                                                                            \
-    printk("%s: è stata richiesta l'invocazione della system call %s.\n", MOD_NAME, system_call)
+    printk("%s: [%s] è stata richiesta l'invocazione della system call %s.\n", MOD_NAME, system_call, system_call)
 
 /* Errore parametri system call */
 #define LOG_PARAM_ERR(system_call)                                                                              \
-    printk("%s: la %s è stata invocata con parametri non validi.\n", MOD_NAME, system_call)
+    printk("%s: [%s] la %s è stata invocata con parametri non validi.\n", MOD_NAME, system_call, system_call)
 
 /* Errore DEVICE system call */
 #define LOG_DEV_ERR(system_call)                                                                                \
@@ -54,6 +54,26 @@ struct result_inval {
     int code;
     struct block *block;
 };
+
+/*
+ * Il primo bit identificato tramite la maschera di bit
+ * MASK_INVALIDATE rappresenta l'esistenza di un thread
+ * che sta invalidando un blocco. I restanti bit sono il
+ * numero di thread impegnati nell'operazione di insert
+ * di un nuovo blocco.
+ * Questa variabile consente di sincronizzare le operazioni
+ * di inserimento e l'operazione di invalidazione. Gli unici
+ * scenari consentiti sono i seguenti:
+ * 1. Non ci sono nè inserimenti né invalidazioni.
+ * 2. Ho un numero arbitrario di inserimenti e nessuna
+ *    invalidazione.
+ * 3. Ho un'unica invalidazione e nessun inserimento.
+ */
+extern uint64_t sync_var;
+
+static DEFINE_MUTEX(inval_insert_mutex);
+
+static DECLARE_WAIT_QUEUE_HEAD(the_queue);
                                                 
 
 #endif

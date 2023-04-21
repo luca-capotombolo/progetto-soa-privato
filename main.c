@@ -154,7 +154,7 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
     /* Verifico se il blocco richiesto è valido */
     if(!check_bit(offset))
     {
-        printk("%s: E' stata richiesta la lettura del blocco %lld ma il blocco non è valido\n", MOD_NAME, offset);
+        printk("%s: [GET DATA] E' stata richiesta la lettura del blocco %lld ma il blocco non è valido\n", MOD_NAME, offset);
         index = (my_epoch & MASK) ? 1 : 0;
         __sync_fetch_and_add(&(gp->standing_ht[index]),1);
         return -ENODATA;
@@ -168,7 +168,7 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
 
     if(msg_block == NULL)
     {
-        printk("%s: E' stata richiesta la lettura del blocco %lld ma è stato invalidato\n", MOD_NAME, offset);
+        printk("%s: [GET DATA] E' stata richiesta la lettura del blocco %lld ma è stato invalidato\n", MOD_NAME, offset);
         return -ENODATA;
     }
 
@@ -209,7 +209,7 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
       
     }    
 
-    printk("%s: Numero di bytes che verranno effettivamente restituiti è %ld\n", MOD_NAME, byte_copy);
+    printk("%s: [GET DATA] Numero di bytes che verranno effettivamente restituiti è %ld\n", MOD_NAME, byte_copy);
     
     byte_ret = copy_to_user(destination, msg_block, byte_copy);
     
@@ -259,7 +259,7 @@ asmlinkage int sys_put_data(char * source, size_t size){
      */
     if( (num_block_free_used == sbi->num_block_free) && (head_free_block_list == NULL) )
     {
-        printk("%s: Non ci sono più blocchi liberi da utilizzare\n", MOD_NAME);
+        printk("%s: [PUT DATA] Non ci sono più blocchi liberi da utilizzare\n", MOD_NAME);
         return -ENOMEM;
     }
 
@@ -285,7 +285,7 @@ retry:
 
         if(n > 5)
         {
-            printk("%s: Numero di tentativi esaurito per il recupero di un blocco libero.\n", MOD_NAME);
+            printk("%s: [PUT DATA] Numero di tentativi esaurito per il recupero di un blocco libero.\n", MOD_NAME);
             return -ENOMEM;
         }
 
@@ -297,7 +297,7 @@ retry:
 
         if(ret)
         {
-                printk("%s: Errore esecuzione kmalloc() nel recupero di un blocco libero\n", MOD_NAME);
+                printk("%s: [PUT DATA] Errore esecuzione kmalloc() nel recupero di un blocco libero\n", MOD_NAME);
                 return -EIO;    
         }
 
@@ -311,7 +311,7 @@ retry:
          */
         if( (head_free_block_list == NULL) && (num_block_free_used == sbi->num_block_free) )
         {
-                printk("%s: Non ci sono più blocchi liberi da utilizzare\n", MOD_NAME);
+                printk("%s: [PUT DATA] Non ci sono più blocchi liberi da utilizzare\n", MOD_NAME);
                 return -ENOMEM;
         }
 
@@ -332,7 +332,7 @@ retry:
     
     if(item == NULL)
     {
-        printk("%s: Errore nel recupero di un blocco libero\n", MOD_NAME);
+        printk("%s: [PUT DATA] Errore nel recupero di un blocco libero\n", MOD_NAME);
         return -ENOMEM;
     }
 
@@ -340,7 +340,7 @@ retry:
 
     kfree(item);
 
-    printk("%s: Indice del blocco libero da utilizzare - %lld\n", MOD_NAME, index);
+    printk("%s: [PUT DATA] Indice del blocco libero da utilizzare - %lld\n", MOD_NAME, index);
 
     /* Calcolo i byte effettivi del messaggio da scrivere nel blocco */
 
@@ -384,7 +384,7 @@ retry:
 
     bytes_ret = copy_from_user(msg, source, bytes_to_copy);
 
-    printk("Numero di bytes non copiati da user space - %ld\n", bytes_ret);
+    printk("[PUT DATA] Numero di bytes non copiati da user space - %ld\n", bytes_ret);
 
     if(bytes_to_copy!=msg_size)
     {
@@ -392,13 +392,13 @@ retry:
         msg[msg_size - 1] = '\0';
     }
 
-    printk("%s: E' stato richiesto di scrivere il messaggio '%s'\n", MOD_NAME, msg);
+    printk("%s: [PUT DATA] E' stato richiesto di scrivere il messaggio '%s'\n", MOD_NAME, msg);
 
     ret = insert_hash_table_valid_and_sorted_list_conc(msg, sbi->num_block, index);
 
     if(ret)
     {
-        printk("%s: Errore nell'inserimento del nuovo blocco con indice %lld\n", MOD_NAME, index);
+        printk("%s: [PUT DATA] Errore nell'inserimento del nuovo blocco con indice %lld\n", MOD_NAME, index);
         kfree(msg);
         return -EIO;
     }
@@ -470,7 +470,7 @@ asmlinkage int sys_invalidate_data(uint64_t offset){
      */
     if(!check_bit(offset))
     {
-        printk("%s: E' stata richiesta l'invalidazione del blocco %lld ma il blocco non è valido\n", MOD_NAME, offset);
+        printk("%s: [INVALIDATE DATA] E' stata richiesta l'invalidazione del blocco %lld ma il blocco non è valido\n", MOD_NAME, offset);
         return -ENODATA;
     }
 
@@ -482,12 +482,12 @@ asmlinkage int sys_invalidate_data(uint64_t offset){
 
     if(ret)
     {
-        printk("%s: [ERRORE] L'invalidazione del blocco %lld non è stata eseguita con successo\n", MOD_NAME, offset);
+        printk("%s: [ERRORE [INVALIDATE DATA] ] L'invalidazione del blocco %lld non è stata eseguita con successo\n", MOD_NAME, offset);
         mutex_unlock(&invalidate_mutex);
         return -ENODATA;
     }
 
-    printk("%s: [SUCCESSO] L'invalidazione del blocco %lld è stata eseguita con successo\n", MOD_NAME, offset);
+    printk("%s: [SUCCESSO [INVALIDATE DATA] ] L'invalidazione del blocco %lld è stata eseguita con successo\n", MOD_NAME, offset);
 
     /* Rilascio il mutex per permettere successive invalidazioni */
     mutex_unlock(&invalidate_mutex);

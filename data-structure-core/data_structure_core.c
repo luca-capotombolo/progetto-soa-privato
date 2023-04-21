@@ -17,23 +17,8 @@ uint64_t**bitmask = NULL;
 int x = 0;
 struct grace_period *gp = NULL;
 
-/*
- * Il primo bit identificato tramite la maschera di bit
- * MASK_INVALIDATE rappresenta l'esistenza di un thread
- * che sta invalidando un blocco. I restanti bit sono il
- * numero di thread impegnati nell'operazione di insert
- * di un nuovo blocco.
- * Questa variabile consente di sincronizzare le operazioni
- * di inserimento e l'operazione di invalidazione. Gli unici
- * scenari consentiti sono i seguenti:
- * 1. Non ci sono nè inserimenti né invalidazioni.
- * 2. Ho un numero arbitrario di inserimenti e nessuna
- *    invalidazione.
- * 3. Ho un'unica invalidazione e nessun inserimento.
- */
 uint64_t sync_var = 0;
-static DEFINE_MUTEX(inval_insert_mutex);
-static DECLARE_WAIT_QUEUE_HEAD(the_queue);
+
 
 
 
@@ -339,9 +324,9 @@ retry_invalidate:
     /* Recupero il numero di inserimenti in corso */
     num_insert = sync_var & MASK_NUMINSERT;
 
-    printk("%s: Il numero di inserimenti attualmente in corso è pari a %lld\n", MOD_NAME, index);
+    printk("%s: Il numero di inserimenti attualmente in corso è pari a %lld\n", MOD_NAME, num_insert);
 
-    if(num_insert > 0)
+    if(num_insert > 0 || sync_var)
     {
         mutex_unlock(&inval_insert_mutex);
 
@@ -384,9 +369,9 @@ retry_invalidate:
     updated_epoch_sorted = (gp->next_epoch_index_sorted) ? MASK : 0;
 
     gp->next_epoch_index_ht += 1;
-    gp->next_epoch_index_ht %= 1;
+    gp->next_epoch_index_ht %= 2;
     gp->next_epoch_index_sorted += 1;
-    gp->next_epoch_index_sorted %= 1;
+    gp->next_epoch_index_sorted %= 2;
 
     last_epoch_ht = __atomic_exchange_n (&(gp->epoch_ht), updated_epoch_ht, __ATOMIC_SEQ_CST);
     last_epoch_sorted = __atomic_exchange_n (&(gp->epoch_sorted), updated_epoch_sorted, __ATOMIC_SEQ_CST);
@@ -419,6 +404,9 @@ sleep_again:
         printk("%s: [INVALIDAZIONE] Deallocazione del blocco %lld eliminato con successo\n", MOD_NAME, index);
         kfree(res_inval->block);
     }
+
+    //TODO: Metti a zero il bit della variabile di controllo sync_var
+    __atomic_exchange_n (&(sync_var), 0X0000000000000000, __ATOMIC_SEQ_CST);
 
     return 0;
 }
