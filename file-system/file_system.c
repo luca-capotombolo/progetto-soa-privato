@@ -48,6 +48,14 @@ int check_is_mounted(void)
 
 
 
+/*
+ * Questa funzione ha il compito di determinare
+ * i primi blocchi liberi nel device. Il numero
+ * massimo di blocchi liberi che può essere caricato
+ * all'interno dell'array è pari a update_list_size.
+ * Inoltre, la funzione determina il numero totale di
+ * blocchi liberi nel device.
+ */
 static int set_free_block(void)
 {
     struct soafs_sb_info *sbi;
@@ -68,11 +76,11 @@ static int set_free_block(void)
 
     if(free_blocks == NULL)
     {
-        printk("%s: [ERRORE FREE BLOCK] Errore esecuzione della kzalloc() nella ricerca dei blocchi liberi\n", MOD_NAME);
+        printk("%s: [ERRORE SMONTAGGIO - SET FREE BLOCK] Errore esecuzione della kzalloc() nella ricerca dei blocchi liberi\n", MOD_NAME);
         return 1;
     }
 
-    printk("%s: [FREE BLOCK] Inizio ricerca blocchi liberi (al massimo %lld)...\n", MOD_NAME, update_list_size);
+    printk("%s: [SMONTAGGIO - SET FREE BLOCK] Inizio ricerca blocchi liberi (al massimo %lld)...\n", MOD_NAME, update_list_size);
 
     bh = sb_bread(sb_global, SOAFS_SB_BLOCK_NUMBER);    
 
@@ -84,17 +92,19 @@ static int set_free_block(void)
 
     b = (struct soafs_super_block *)bh->b_data;
 
-    b->num_block_free = b->num_block_free - num_block_free_used;
+    num_block_data = sbi->num_block - 2 - sbi->num_block_state;
 
     if((num_block_free_used == sbi->num_block_free) && (head_free_block_list == NULL))
     {
-        printk("%s: [FREE BLOCK] I blocchi liberi a disposizione sono terminati\n", MOD_NAME);
+        printk("%s: [SMONTAGGIO - SET FREE BLOCK] I blocchi liberi a disposizione sono terminati\n", MOD_NAME);
 
         b->actual_size = 0;
 
+        b->num_block_free = 0;
+
         mark_buffer_dirty(bh);
 
-        ret = sync_dirty_buffer(bh);
+        sync_dirty_buffer(bh);
     
         brelse(bh);
 
@@ -103,31 +113,35 @@ static int set_free_block(void)
         return 0;
     }
 
-    num_block_data = sbi->num_block - 2 - sbi->num_block_state;
-
+    /*
+     * Rappresenta il numero attuale di blocchi
+     * liberi che sono stati identificati. Di questi
+     * blocchi, al più update_list_size verranno
+     * inseriti all'interno dell'array.
+     */    
     counter = 0;
 
     for(index = 0; index < num_block_data; index++)
     {
-        if(counter == update_list_size)
-        {
-            break;
-        }
-
         ret = check_bit(index);
 
         if(!ret)
         {
-            printk("%s: [FREE BLOCK] Blocco libero #%lld\n", MOD_NAME, index);
-            
-            free_blocks[counter] = index;
+            printk("%s: [SMONTAGGIO - SET FREE BLOCK] Blocco libero #%lld\n", MOD_NAME, index);
+
+            if(counter < update_list_size)
+            {
+                free_blocks[counter] = index;
+            }          
 
             counter++;
         }
 
     }
 
-    printk("%s: [FREE BLOCK] Numero di blocchi liberi trovati %lld\n", MOD_NAME, counter);
+    b->num_block_free = counter;
+
+    printk("%s: [SMONTAGGIO - SET FREE BLOCK] Numero di blocchi liberi trovati %lld\n", MOD_NAME, counter);
 
     b->actual_size = counter;
     
@@ -138,7 +152,7 @@ static int set_free_block(void)
 
     mark_buffer_dirty(bh);
 
-    ret = sync_dirty_buffer(bh);
+    sync_dirty_buffer(bh);
     
     brelse(bh);
 
@@ -150,7 +164,11 @@ static int set_free_block(void)
 
 
 
-
+/*
+ * Questa funzione esegue il flush dei blocchi di stato sul
+ * device. In questo modo, al successivo montaggio, sono in
+ * grado di stabilire quali sono i blocchi validi.
+ */
 int flush_bitmask(void)
 {
     struct soafs_sb_info *sbi;
@@ -172,7 +190,7 @@ int flush_bitmask(void)
 
         if(bh == NULL)
         {
-            printk("%s: Errore nella lettura del blocco di stato #%lld\n", MOD_NAME, counter);
+            printk("%s: [ERRORE SMONTAGGIO - FLUSH BITMASK] Errore nella lettura del blocco di stato #%lld\n", MOD_NAME, counter);
             return 1;
         }
 
@@ -187,7 +205,7 @@ int flush_bitmask(void)
 
         sync_dirty_buffer(bh);
 
-        printk("%s: [FLUSH BITMASK] Flush dei dati per il blocco di stato #%lld avvenuto con successo\n", MOD_NAME, counter);        
+        printk("%s: [SMONTAGGIO - FLUSH BITMASK] Flush dei dati per il blocco di stato #%lld avvenuto con successo\n", MOD_NAME, counter);        
         
         counter++;
 
@@ -199,6 +217,10 @@ int flush_bitmask(void)
 
 
 
+/*
+ * Questa funzione ha il compito di riportare i messaggi utente
+ * validi all'interno dei corrispettivi blocchi del device.
+ */
 int flush_valid_block(void)
 {
     struct buffer_head *bh;
@@ -213,7 +235,7 @@ int flush_valid_block(void)
 
     if(curr == NULL)
     {
-        printk("%s: Non ci sono messaggi validi da riportare\n", MOD_NAME);
+        printk("%s: [SMONTAGGIO - FLUSH VALID BLOCK] Non ci sono messaggi validi da riportare\n", MOD_NAME);
         return 0;
     }
 
@@ -227,7 +249,7 @@ int flush_valid_block(void)
     {
         index = curr->block_index;
     
-        printk("%s: [VALID BLOCK] Il blocco con indice %lld deve essere riportato su device\n", MOD_NAME, index);
+        printk("%s: [SMONTAGGIO - FLUSH VALID BLOCK]  Il blocco con indice %lld deve essere riportato su device\n", MOD_NAME, index);
 
         bh = sb_bread(sb_global, 2 + num_block_state + index);
 
@@ -248,72 +270,104 @@ int flush_valid_block(void)
         brelse(bh);
     }
 
-    printk("%s: [VALID BLOCK] I blocchi sono stati riportati correttamente su device\n", MOD_NAME);
+    printk("%s: [SMONTAGGIO - FLUSH VALID BLOCK] I blocchi validi sono stati riportati correttamente su device\n", MOD_NAME);
     
     return 0;
 }
 
 
 
+/*
+ * Questa funzione ha il compito di deallocare le strutture
+ * dati core che sono state utilizzate per l'attaule istanza
+ * di montaggio del FS.
+ * Una nuova istanza di montaggio del FS necessiterà di nuove
+ * strutture dati.
+ */
 void free_all_memory(void)
 {
     struct block_free *next_bf;
     struct block *next_b;
+    struct soafs_sb_info *sbi;
+    uint64_t num_block_state;
     int index;
 
+    /* Deallocazione degli elementi nella lista dei blocchi liberi */
     if(head_free_block_list!=NULL)
     {
-        printk("%s: [FREE MEMORY] La lista dei blocchi liberi non è vuota... inizio deallocazione in corso...\n", MOD_NAME);
+        printk("%s: [SMONTAGGIO - FREE MEMORY] La lista dei blocchi liberi non è vuota... inizio deallocazione in corso...\n", MOD_NAME);
+
         while(head_free_block_list!=NULL)
         {
             next_bf = head_free_block_list->next;
 
-            printk("%s: [FREE MEMORY] Deallocazione blocco #%lld...\n", MOD_NAME, head_free_block_list->block_index);
+            printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione blocco #%lld...\n", MOD_NAME, head_free_block_list->block_index);
         
             kfree(head_free_block_list);
 
-            printk("%s: [FREE MEMORY] Deallocazione blocco #%lld avvenuta con successo\n", MOD_NAME, head_free_block_list->block_index);
+            printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione blocco #%lld avvenuta con successo\n", MOD_NAME, head_free_block_list->block_index);
     
             head_free_block_list = next_bf;
         }
 
-        printk("%s: [FREE MEMORY] Deallocazione dei blocchi dalla lista libera completata con successo\n", MOD_NAME);        
+        printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione dei blocchi dalla lista libera completata con successo\n", MOD_NAME);        
     }
 
+    /* Setto a NULL la testa delle liste nella HT */
     for(index=0;index<x;index++)
     {
         (&hash_table_valid[index])->head_list = NULL;
     }
 
+    /* Dealloco gli elementi che rappresentano i blocchi validi */
     if(head_sorted_list != NULL)
     {
 
-        printk("%s: [FREE MEMORY] La lista dei blocchi ordinati non è vuota... inizio deallocazione in corso...\n", MOD_NAME);
+        printk("%s: [SMONTAGGIO - FREE MEMORY] La lista dei blocchi ordinati non è vuota... inizio deallocazione in corso...\n", MOD_NAME);
 
         while(head_sorted_list != NULL)
         {
             next_b = head_sorted_list->sorted_list_next;
 
-            printk("%s: [FREE MEMORY] Deallocazione blocco #%lld...\n", MOD_NAME, head_sorted_list->block_index);
+            printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione blocco #%lld...\n", MOD_NAME, head_sorted_list->block_index);
         
             kfree(head_sorted_list);
 
-            printk("%s: [FREE MEMORY] Deallocazione blocco #%lld avvenuta con successo\n", MOD_NAME, head_sorted_list->block_index);
+            printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione blocco #%lld avvenuta con successo\n", MOD_NAME, head_sorted_list->block_index);
     
             head_sorted_list = next_b;
         }
     
-        printk("%s: [FREE MEMORY] Deallocazione dei blocchi dalla lista ordinata completata con successo\n", MOD_NAME);
+        printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione dei blocchi dalla lista ordinata completata con successo\n", MOD_NAME);
     }
+
+    /* Dealloco la tabella hash */
+    kfree(hash_table_valid);
+    
+    printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione della HT avvenuta con successo\n", MOD_NAME);
+
+    /* Dealloco la maschera di bit */
+    sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
+
+    num_block_state = sbi->num_block_state;
+
+    for(index=0; index<num_block_state; index++)
+    {
+        kfree(bitmask[index]);
+    }
+
+    kfree(bitmask);
+
+    printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione della BITMASK avvenuta con successo\n", MOD_NAME);
 
     if(head_free_block_list != NULL)
     {
-        printk("%s: [ERRORE SMONTAGGIO] La lista dei blocchi liberi non è vuota\n", MOD_NAME);
+        printk("%s: [ERRORE SMONTAGGIO - FREE MEMORY] La lista dei blocchi liberi non è vuota\n", MOD_NAME);
     }
 
     if(head_sorted_list != NULL)
     {
-        printk("%s: [ERRORE SMONTAGGIO] La lista dei blocchi ordinata non è vuota\n", MOD_NAME);
+        printk("%s: [ERRORE SMONTAGGIO - FREE MEMORY] La lista dei blocchi ordinata non è vuota\n", MOD_NAME);
     }
 
 }
@@ -604,8 +658,9 @@ static void soafs_kill_sb(struct super_block *sb)
     int ret;
     int n;
 
-    is_mounted = 0;
     n = 0;
+
+    printk("%s: [SMONTAGGIO] Inizio smontaggio del FS...", MOD_NAME);
 
 retry_flush_bitmask:
 
@@ -648,9 +703,9 @@ retry_umount:
 
     kill_block_super(sb);
 
-    printk("%s: Il File System 'soafs' è stato smontato con successo.\n", MOD_NAME);
-    
+    printk("%s: [SMONTAGGIO] Il File System 'soafs' è stato smontato con successo.\n", MOD_NAME);
 
+    is_mounted = 0;
 }
 
 

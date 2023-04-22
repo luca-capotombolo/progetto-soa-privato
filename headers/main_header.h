@@ -31,24 +31,24 @@
 #define AUDIT if(1)
 
 /* Debugging per le system calls */
-#define LOG_SYSTEM_CALL(system_call)                                                                            \
-    printk("%s: [%s] è stata richiesta l'invocazione della system call %s.\n", MOD_NAME, system_call, system_call)
+#define LOG_SYSTEM_CALL(system_call_m, system_call)                                                              \
+    printk("%s: [%s] è stata richiesta l'invocazione della system call %s.\n", MOD_NAME, system_call_m, system_call)
 
 /* Errore parametri system call */
-#define LOG_PARAM_ERR(system_call)                                                                              \
-    printk("%s: [%s] la %s è stata invocata con parametri non validi.\n", MOD_NAME, system_call, system_call)
+#define LOG_PARAM_ERR(system_call_m, system_call)                                                                              \
+    printk("%s: [%s] la %s è stata invocata con parametri non validi.\n", MOD_NAME, system_call_m, system_call)
 
 /* Errore DEVICE system call */
-#define LOG_DEV_ERR(system_call)                                                                                \
-    printk("%s: [%s] il device su cui operare non è stato montato.\n", MOD_NAME, system_call)
+#define LOG_DEV_ERR(system_call_m, system_call)                                                                                \
+    printk("%s: [%s] il device su cui operare non è stato montato.\n", MOD_NAME, system_call_m)
 
 /* BUFFER CACHE */
 #define LOG_BH(system_call, operazione, offset, esito)                                                            \
     printk("%s: [%s] %s nella %s del blocco con indice %d\n", MOD_NAME, system_call, esito, operazione, offset)
 
 /* Errore KMALLOC */
-#define LOG_KMALLOC_ERR(system_call)                                                            \
-    printk("%s: [%s] si è verificato un errore nell'allocazione della memoria con la kmalloc()\n", MOD_NAME, system_call)
+#define LOG_KMALLOC_ERR(system_call_m)                                                            \
+    printk("%s: [%s] si è verificato un errore nell'allocazione della memoria con la kmalloc()\n", MOD_NAME, system_call_m)
 
 struct result_inval {
     int code;

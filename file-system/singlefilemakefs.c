@@ -51,18 +51,6 @@ int main(int argc, char *argv[])
 
     update_list_size = atoi(argv[3]);
 
-    /*
-     * Verifico se si sta chiedendo di caricare
-     * nella lista dei blocchi liberi un numero
-     * di blocchi che è maggiore della dimensione
-     * massima della lista.
-     */
-    if(update_list_size > SIZE_INIT)
-    {
-        printf("Il numero massimo degli elementi per l'aggiornamento %ld è strettamente maggiore di %d\n", update_list_size, SIZE_INIT);
-        return -1;
-    }
-
     actual_size = atoi(argv[4]);
 
     /*
@@ -74,6 +62,19 @@ int main(int argc, char *argv[])
     if(actual_size > SIZE_INIT)
     {
         printf("La dimensione richiesta %ld è maggiore della dimensione massima dell'array %d\n", actual_size, SIZE_INIT);
+        printf("Il valore di actual_size > SIZE_INIT\n");
+        return -1;
+    }
+
+    /*
+     * Il valore di update_list_size verrà utilizzato per
+     * determinare la dimensione dell'array al successivo
+     * montaggio.
+     */
+    if(update_list_size > SIZE_INIT)
+    {
+        printf("La dimensione richiesta %ld è maggiore della dimensione massima dell'array %d\n", actual_size, SIZE_INIT);
+        printf("Il valore di update_list_size > SIZE_INIT\n");
         return -1;
     }
 
@@ -91,6 +92,27 @@ int main(int argc, char *argv[])
 
     /* Computo il numero dei blocchi di dati. */
     nblocks_data = nblocks - 2;
+
+    if(actual_size > nblocks_data)
+    {
+        printf("Si sta richiedendo un array con una dimensione maggiore del numero massimo dei blocchi di dati\n");
+        printf("Il valore di actual_size > nblocks\n");
+        return -1;
+    }
+
+    if(SIZE_INIT > nblocks_data)
+    {
+        printf("La dimensione massima dell'array è maggiore del numero massimo dei blocchi di dati\n");
+        printf("Il valore di SIZE_INIT > nblocks\n");
+        return -1;
+    }
+
+    if(update_list_size > nblocks_data)
+    {
+        printf("Il numero massimo di blocchi da recuperare dal device è maggiore del numero massimo dei blocchi di dati\n");
+        printf("Il valore di update_list_size > nblocks\n");
+        return -1;
+    }
 
     /* Computo il numero dei blocchi di stato.
      * Il valore SOAFS_BLOCK_SIZE << 3 rappresenta

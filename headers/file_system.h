@@ -32,7 +32,7 @@
 /* Numero di Epoche */
 #define EPOCHS 2
 /* Numero di blocchi liberi con cui inizializzo la free_block_list */
-#define SIZE_INIT 40
+#define SIZE_INIT 10
 
 
 
@@ -68,10 +68,7 @@ struct soafs_inode {
 
 
 
-/*
- * Rappresenta il contenuto di un singolo
- * blocco del dispositivo.
- */
+/* Rappresenta il contenuto di un singolo blocco del dispositivo */
 struct soafs_block {
     uint64_t pos;
     char msg[SOAFS_BLOCK_SIZE - (sizeof(uint64_t))];
@@ -79,9 +76,7 @@ struct soafs_block {
 
 
 
-/*
- * Mantiene le informazioni specifiche del SB del FS.
- */
+/* Mantiene le informazioni specifiche del SB del FS */
 struct soafs_sb_info {
     uint64_t num_block;
     uint64_t num_block_free;

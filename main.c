@@ -124,13 +124,13 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
     unsigned long * epoch;
     int index;
     
-    LOG_SYSTEM_CALL("get_data");
+    LOG_SYSTEM_CALL("GET_DATA", "get_data");
     
     ret = check_is_mounted();                                   /* verifico se il file system su cui si deve operare è stato effettivamente montato */
 
     if(!ret)
     {
-        LOG_DEV_ERR("get_data");
+        LOG_DEV_ERR("GET_DATA", "get_data");
         return -ENODEV;
     }
 
@@ -139,7 +139,7 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
     /* Faccio un controllo sui parametri */
     if( check_offset(offset, sbi) || check_size(size) )
     {
-        LOG_PARAM_ERR("get_data");
+        LOG_PARAM_ERR("GET_DATA", "get_data");
         return -EINVAL;
     }
 
@@ -222,9 +222,10 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
 __SYSCALL_DEFINEx(2, _put_data, char *, source, size_t, size){
 #else
-asmlinkage int sys_put_data(char * source, size_t size){
+asmlinkage uint64_t sys_put_data(char * source, size_t size){
 #endif
     struct soafs_sb_info *sbi;
+    struct block_free *item;
     int available_data;
     int ret;
     int n;                          /* Numero corrente di tentativi per il recupero del blocco libero */
@@ -233,21 +234,20 @@ asmlinkage int sys_put_data(char * source, size_t size){
     size_t bytes_to_copy;           /* Il numero di bytes che verranno effettivamente copiati dallo spazio utente */    
     unsigned long bytes_ret;        /* Il numero di bytes effettivamente copiati */
     uint64_t index;
-    struct block_free *item;
 
-    LOG_SYSTEM_CALL("put_data");
+    LOG_SYSTEM_CALL("PUT_DATA", "put_data");
 
     ret = check_is_mounted();   /* verifico se il file system su cui si deve operare è stato effettivamente montato */
 
     if(!ret)
     {
-        LOG_DEV_ERR("put_data");
+        LOG_DEV_ERR("PUT_DATA", "put_data");
         return -ENODEV;
     }
 
     if(check_size(size))
     {
-        LOG_PARAM_ERR("put_data");
+        LOG_PARAM_ERR("PUT_DATA", "put_data");
         return -EINVAL;
     }
 
@@ -257,9 +257,9 @@ asmlinkage int sys_put_data(char * source, size_t size){
      * Verifico se vale la pena eseguire una ricerca dei blocchi
      * liberi oppure sono già tutti occupati.
      */
-    if( (num_block_free_used == sbi->num_block_free) && (head_free_block_list == NULL) )
+    if( (head_free_block_list == NULL) && (num_block_free_used == sbi->num_block_free) )
     {
-        printk("%s: [PUT DATA] Non ci sono più blocchi liberi da utilizzare\n", MOD_NAME);
+        printk("%s: [ERRORE PUT DATA] Non ci sono più blocchi liberi da utilizzare\n", MOD_NAME);
         return -ENOMEM;
     }
 
@@ -267,10 +267,10 @@ asmlinkage int sys_put_data(char * source, size_t size){
     n = 0;
 
     /*
-     * Recupero l'indice del blocco libero da utilizzare. Se
-     * la lista dei blocchi liberi è vuota, allora devo recuperare
-     * le informazioni relative ad altri blocchi liberi; altrimenti,
-     * estraggo il blocco in testa alla lista.
+     * Recupero l'indice del blocco libero da utilizzare per inserire
+     * il messaggio dell'utente. Se la lista dei blocchi liberi è vuota,
+     * allora devo recuperare le informazioni relative ad altri blocchi
+     * liberi; altrimenti, estraggo il blocco in testa alla lista.
      */
     if(head_free_block_list == NULL)
     {
@@ -285,7 +285,7 @@ retry:
 
         if(n > 5)
         {
-            printk("%s: [PUT DATA] Numero di tentativi esaurito per il recupero di un blocco libero.\n", MOD_NAME);
+            printk("%s: [ERRORE PUT DATA] Numero di tentativi esaurito per il recupero di un blocco libero.\n", MOD_NAME);
             return -ENOMEM;
         }
 
@@ -297,7 +297,7 @@ retry:
 
         if(ret)
         {
-                printk("%s: [PUT DATA] Errore esecuzione kmalloc() nel recupero di un blocco libero\n", MOD_NAME);
+                printk("%s: [ERRORE PUT DATA] Errore esecuzione kmalloc() nel recupero di un blocco libero\n", MOD_NAME);
                 return -EIO;    
         }
 
@@ -311,7 +311,7 @@ retry:
          */
         if( (head_free_block_list == NULL) && (num_block_free_used == sbi->num_block_free) )
         {
-                printk("%s: [PUT DATA] Non ci sono più blocchi liberi da utilizzare\n", MOD_NAME);
+                printk("%s: [ERRORE PUT DATA] Non ci sono più blocchi liberi da utilizzare\n", MOD_NAME);
                 return -ENOMEM;
         }
 
@@ -332,7 +332,7 @@ retry:
     
     if(item == NULL)
     {
-        printk("%s: [PUT DATA] Errore nel recupero di un blocco libero\n", MOD_NAME);
+        printk("%s: [ERRORE PUT DATA] Errore nel recupero di un blocco libero\n", MOD_NAME);
         return -ENOMEM;
     }
 
@@ -398,14 +398,14 @@ retry:
 
     if(ret)
     {
-        printk("%s: [PUT DATA] Errore nell'inserimento del nuovo blocco con indice %lld\n", MOD_NAME, index);
+        printk("%s: [ERRORE PUT DATA] Errore nell'inserimento del nuovo blocco con indice %lld\n", MOD_NAME, index);
         kfree(msg);
         return -EIO;
     }
 
     set_bitmask(index, 1);    
 
-    return bytes_to_copy - bytes_ret;
+    return index;
 
 
 /* ------------------------------------------------------------------------------------------------------ 
@@ -445,13 +445,13 @@ asmlinkage int sys_invalidate_data(uint64_t offset){
     int ret;
     struct soafs_sb_info *sbi;
 
-    LOG_SYSTEM_CALL("invalidate_data");
+    LOG_SYSTEM_CALL("INVALIDATE DATA", "invalidate_data");
 
     ret = check_is_mounted();
 
     if(!ret)
     {
-        LOG_DEV_ERR("invalidate_data");
+        LOG_DEV_ERR("INVALIDATE DATA", "invalidate_data");
         return -ENODEV;
     }
 
@@ -460,7 +460,7 @@ asmlinkage int sys_invalidate_data(uint64_t offset){
     /* Faccio un controllo sull'indice del blocco passato come parametro */
     if( check_offset(offset, sbi) )
     {
-        LOG_PARAM_ERR("invalidate_data");
+        LOG_PARAM_ERR("INVALIDATE DATA", "invalidate_data");
         return -EINVAL;
     }
 
@@ -482,12 +482,12 @@ asmlinkage int sys_invalidate_data(uint64_t offset){
 
     if(ret)
     {
-        printk("%s: [ERRORE [INVALIDATE DATA] ] L'invalidazione del blocco %lld non è stata eseguita con successo\n", MOD_NAME, offset);
+        printk("%s: [ERRORE INVALIDATE DATA] L'invalidazione del blocco %lld non è stata eseguita con successo\n", MOD_NAME, offset);
         mutex_unlock(&invalidate_mutex);
         return -ENODATA;
     }
 
-    printk("%s: [SUCCESSO [INVALIDATE DATA] ] L'invalidazione del blocco %lld è stata eseguita con successo\n", MOD_NAME, offset);
+    printk("%s: [INVALIDATE DATA] L'invalidazione del blocco %lld è stata eseguita con successo\n", MOD_NAME, offset);
 
     /* Rilascio il mutex per permettere successive invalidazioni */
     mutex_unlock(&invalidate_mutex);
