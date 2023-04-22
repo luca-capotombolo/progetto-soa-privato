@@ -431,22 +431,22 @@ int new_thread_daemon(void)
 
 	if (IS_ERR(kt)) {
 
-		printk("%s: Errore creazione kernel thread\n", MOD_NAME);
+		printk("%s: [ERRORE DEMONE] Errore creazione kernel thread\n", MOD_NAME);
 
         return 1;
 	}
 
-    printk("%s: Creazione del thread demone avvenuta con successo\n", MOD_NAME);
+    printk("%s: [DEMONE] Creazione del thread demone avvenuta con successo\n", MOD_NAME);
 
     ret = wake_up_process(kt);
 
     if(ret)
     {
-        printk("%s: Risveglio del thread demone avvenuto con successo\n", MOD_NAME);
+        printk("%s: [DEMONE] Risveglio del thread demone avvenuto con successo\n", MOD_NAME);
     }
     else
     {
-        printk("%s: Il thread è già in esecuzione\n", MOD_NAME);
+        printk("%s: [DEMONE] Il thread è già in esecuzione\n", MOD_NAME);
     }    
 
     return 0;
@@ -469,7 +469,7 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     /* Imposto la dimensione del superblocco pari a 4KB. */
     if(sb_set_blocksize(sb, SOAFS_BLOCK_SIZE) == 0)
     {
-        printk("%s: Errore nel setup della dimensione del superblocco.\n", MOD_NAME);
+        printk("%s: [ERRORE MONTAGGIO] Errore nel setup della dimensione del superblocco.\n", MOD_NAME);
         return -EIO;
     }
    
@@ -481,7 +481,7 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     bh = sb_bread(sb, SOAFS_SB_BLOCK_NUMBER);
 
     if(bh == NULL){
-        printk("%s: Errore nella lettura del superblocco.\n", MOD_NAME);
+        printk("%s: [ERRORE MONTAGGIO] Errore nella lettura del superblocco.\n", MOD_NAME);
 	    return -EIO;
     }
 
@@ -491,14 +491,14 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     /* Faccio il check per verificare se il numero di blocchi nel dispositivo è valido. */
     if( (sb_disk->num_block > NBLOCKS) || ((sb_disk->num_block - sb_disk->num_block_state - 2) <= 0) )
     {
-        printk("%s: Il numero di blocchi del dispositivo non è valido.\n", MOD_NAME);
+        printk("%s: [ERRORE MONTAGGIO] Il numero di blocchi del dispositivo non è valido.\n", MOD_NAME);
         brelse(bh);
         return -EINVAL;
     }
 
     /* Verifico il valore del magic number presente nel superblocco sul device. */
     if(sb_disk->magic != SOAFS_MAGIC_NUMBER){
-        printk("%s: Mancata corrispondenza tra i due magic number.\n", MOD_NAME);
+        printk("%s: [ERRORE MONTAGGIO] Mancata corrispondenza tra i due magic number.\n", MOD_NAME);
         brelse(bh);
 	    return -EBADF;
     }
@@ -512,7 +512,7 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
 
     if(sbi == NULL)
     {
-        printk("%s: Errore kzalloc() nell'allocazione della struttura dati soafs_sb_info.\n", MOD_NAME);
+        printk("%s: [ERRORE MONTAGGIO] Errore kzalloc() nell'allocazione della struttura dati soafs_sb_info.\n", MOD_NAME);
         brelse(bh);
         return -ENOMEM;
     }
@@ -524,17 +524,17 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
 
     sb->s_fs_info = sbi;
 
-    printk("%s: Il numero di blocchi del dispositivo è pari a %lld.\n", MOD_NAME, sb_disk->num_block);
-    printk("%s: Il numero di blocchi liberi del dispositivo è pari a %lld.\n", MOD_NAME, sb_disk->num_block_free);
-    printk("%s: Il numero di blocchi di stato del dispositivo è pari a %lld.\n", MOD_NAME, sb_disk->num_block_state);
-    printk("%s: Il numero di blocchi massimo da caricare all'aggiornamento è pari a %lld.\n", MOD_NAME, sb_disk->update_list_size);
+    printk("%s: [MONTAGGIO] Il numero di blocchi del dispositivo è pari a %lld.\n", MOD_NAME, sb_disk->num_block);
+    printk("%s: [MONTAGGIO] Il numero di blocchi liberi del dispositivo è pari a %lld.\n", MOD_NAME, sb_disk->num_block_free);
+    printk("%s: [MONTAGGIO] Il numero di blocchi di stato del dispositivo è pari a %lld.\n", MOD_NAME, sb_disk->num_block_state);
+    printk("%s: [MONTAGGIO] Il numero di blocchi massimo da caricare all'aggiornamento è pari a %lld.\n", MOD_NAME, sb_disk->update_list_size);
     
     /* Recupero il root inode. */
     root_inode = iget_locked(sb, 0);
 
     if(!root_inode)
     {
-        printk("%s: Errore nel recupero del root inode.\n", MOD_NAME);
+        printk("%s: [ERRORE MONTAGGIO] Errore nel recupero del root inode.\n", MOD_NAME);
         brelse(bh);
         kfree(sbi);
         return -ENOMEM;
@@ -555,7 +555,7 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
 
     if (!root_dentry)
     {
-        printk("%s: Errore nella creazione della root directory.\n", MOD_NAME);
+        printk("%s: [ERRORE MONTAGGIO] Errore nella creazione della root directory.\n", MOD_NAME);
         brelse(bh);
         kfree(sbi);
         return -ENOMEM;
@@ -573,7 +573,7 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
 
     if(ret)
     {
-        printk("%s: Errore nella inizializzazione delle strutture dati core del modulo.\n", MOD_NAME);
+        printk("%s: [ERRORE MONTAGGIO] Errore nella inizializzazione delle strutture dati core del modulo.\n", MOD_NAME);
         brelse(bh);
         kfree(sbi);
         return -EIO;
@@ -583,7 +583,7 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
 
     if(ret)
     {
-        printk("%s: Errore nella creazione del thread demone\n", MOD_NAME);
+        printk("%s: [ERRORE MONTAGGIO] Errore nella creazione del thread demone\n", MOD_NAME);
         brelse(bh);
         kfree(sbi);
         free_all_memory();
@@ -661,7 +661,7 @@ static struct dentry *soafs_mount(struct file_system_type *fs_type, int flags, c
 
     if(is_mounted)
     {
-        printk("%s: Esiste già un altro montaggio del file system di tipo %s\n", MOD_NAME, fs_type->name);
+        printk("%s: [ERRORE MONTAGGIO] Esiste già un altro montaggio del file system di tipo %s\n", MOD_NAME, fs_type->name);
         return ERR_PTR(-EINVAL);
     }
     
@@ -669,13 +669,13 @@ static struct dentry *soafs_mount(struct file_system_type *fs_type, int flags, c
 
     if (unlikely(IS_ERR(ret)))
     {
-        printk("%s: Errore durante il montaggio del File System 'soafs'.\n",MOD_NAME);
+        printk("%s: [ERRORE MONTAGGIO] Errore durante il montaggio del File System 'soafs'.\n",MOD_NAME);
         is_mounted = 0;
     }
     else
     {
-        printk("%s: Montaggio del File System 'soafs' sul device %s avvenuto con successo.\n",MOD_NAME,dev_name);
-        is_mounted = 1;     /* Registro il fatto che il file system è stato montato. */
+        printk("%s: [MONTAGGIO] Montaggio del File System sul device %s avvenuto con successo.\n",MOD_NAME,dev_name);
+        is_mounted = 1;     /* Registro il fatto che il file system è stato montato */
     }
 
     return ret;

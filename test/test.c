@@ -169,7 +169,9 @@ int main(int argc, char** argv){
 
     //read_file();
 
-    write_all_blocks();
+    //write_all_blocks();
+
+    put_data(str1);
 
     pause();
 

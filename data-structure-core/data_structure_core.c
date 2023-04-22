@@ -8,7 +8,7 @@
 
 
 struct block *head_sorted_list = NULL;                          /* Puntatore alla testa della lista contenente i blocchi nell'ordine di consegna. */
-struct block *tail_sorted_list = NULL;                          /* Puntatore alla coda della lista contenente i blocchi nell'ordine di consegna.  */
+//struct block *tail_sorted_list = NULL;                          /* Puntatore alla coda della lista contenente i blocchi nell'ordine di consegna.  */
 struct block_free *head_free_block_list = NULL;                 /* Puntatore alla testa della lista contenente i blocchi liberi. */
 struct ht_valid_entry *hash_table_valid = NULL;                 /* Hash table */
 uint64_t num_block_free_used = 0;
@@ -28,7 +28,7 @@ void scan_free_list(void) //
 
     curr = head_free_block_list;
 
-    printk("%s: ------------------------------INIZIO FREE LIST------------------------------------------", MOD_NAME);
+    printk("%s: ------------------------------ INIZIO FREE LIST ------------------------------------------", MOD_NAME);
 
     while(curr!=NULL)
     {
@@ -36,7 +36,7 @@ void scan_free_list(void) //
         curr = curr->next;
     }
 
-    printk("%s: ----------------------------FINE FREE LIST-------------------------------------------", MOD_NAME);
+    printk("%s: ---------------------------- FINE FREE LIST ----------------------------------------------", MOD_NAME);
 }
 
 
@@ -47,7 +47,7 @@ void scan_sorted_list(void) //
 
     curr = head_sorted_list;
     
-    printk("%s: ----------------------------------INIZIO SORTED LIST  ---------------------------------------------", MOD_NAME);
+    printk("%s: ---------------------------------- INIZIO SORTED LIST ---------------------------------------------", MOD_NAME);
 
     while(curr!=NULL)
     {
@@ -55,7 +55,7 @@ void scan_sorted_list(void) //
         curr = curr->sorted_list_next;
     }
 
-    printk("%s: --------------------------------FINE SORTED LIST -----------------------------------------", MOD_NAME);
+    printk("%s: ---------------------------------- FINE SORTED LIST   ---------------------------------------------", MOD_NAME);
     
 }
 
@@ -71,7 +71,7 @@ void scan_hash_table(void) //
 
     for(entry_num=0; entry_num<x; entry_num++)
     {
-        printk("%s: ---------------------------------------------------------------------------------", MOD_NAME);
+        printk("%s: ----------------------------- %d --------------------------------", MOD_NAME, entry_num);
         entry = hash_table_valid[entry_num];
         item = entry.head_list;
 
@@ -81,11 +81,11 @@ void scan_hash_table(void) //
             item = item ->hash_table_next;
         }
 
-        printk("%s: ---------------------------------------------------------------------------------", MOD_NAME);
+        printk("%s: -------------------------------------------------------------------", MOD_NAME);
         
     }
 
-    printk("%s: -------------------------- FINE HASH TABLE --------------------------------------------------\n", MOD_NAME);
+    printk("%s: -------------------------- FINE HASH TABLE ---------------------------------------------------\n", MOD_NAME);
 }
 
 
@@ -133,8 +133,8 @@ void compute_num_rows(uint64_t num_data_block) //
         }
     }
 
-    printk("%s: La lunghezza massima di una entry della tabella hash è pari a %d.\n", MOD_NAME, list_len);
-    printk("%s: Il numero di entry nella tabella hash è pari a %d.\n", MOD_NAME, x);
+    printk("%s: [COMPUTAZIONE NUMERO RIGHE] La lunghezza massima di una entry della tabella hash è pari a %d.\n", MOD_NAME, list_len);
+    printk("%s: [COMPUTAZIONE NUMERO RIGHE] Il numero di entry nella tabella hash è pari a %d.\n", MOD_NAME, x);
 }
 
 
@@ -413,7 +413,7 @@ sleep_again:
 
 
 
-int init_bitmask(void) //
+int init_bitmask(void)
 {
     struct buffer_head *bh;
     struct soafs_sb_info *sbi;
@@ -435,17 +435,17 @@ int init_bitmask(void) //
 
     if(num_block_state <= 0)
     {
-        printk("%s: Numero dei blocchi di stato non è valido.\n", MOD_NAME);
+        printk("%s: [ERRORE INIZIALIZZAZIONE CORE - BITMASK] Numero dei blocchi di stato non è valido.\n", MOD_NAME);
         return 1;
     }
 
-    printk("%s: Inizio inizializzazione bitmask...Numero entry pari a %lld\n", MOD_NAME, num_block_state);
+    printk("%s: [INIZIALIZZAZIONE CORE - BITMASK] Inizio inizializzazione bitmask...Il numero delle entry è pari a %lld\n", MOD_NAME, num_block_state);
 
     bitmask = (uint64_t **)kzalloc(num_block_state * sizeof(uint64_t *), GFP_KERNEL);
 
     if(bitmask == NULL)
     {
-        printk("%s: Errore durante l'allocazione della bitmask.", MOD_NAME);
+        printk("%s: [ERRORE INIZIALIZZAZIONE CORE - BITMASK] Errore esecuzione kzalloc() durante l'allocazione della bitmask.", MOD_NAME);
         return 1;
     }
 
@@ -458,12 +458,15 @@ int init_bitmask(void) //
 
         if(bh == NULL)
         {
-            printk("%s: Errore nella lettura del blocco di stato con indice %lld.\n", MOD_NAME, index);
+            printk("%s: [ERRORE INIZIALIZZAZIONE CORE - BITMASK] Errore nella lettura del blocco di stato con indice %lld.\n", MOD_NAME, index);
+
             for(roll_index=0; roll_index<index; roll_index++)
             {
                 kfree(bitmask[roll_index]);    
             }
-            printk("%s: deallocazioni eseguite con successo.\n", MOD_NAME);
+
+            printk("%s: [ERRORE INIZIALIZZAZIONE CORE - BITMASK] Deallocazioni eseguite con successo.\n", MOD_NAME);
+
 	        return 1;
         }
 
@@ -472,12 +475,15 @@ int init_bitmask(void) //
 
         if(bitmask[index] == NULL)
         {
-            printk("%s: Errore nella lettura del blocco di stato con indice %lld.\n", MOD_NAME, index);
+            printk("%s: [ERRORE INIZIALIZZAZIONE CORE - BITMASK] Errore esecuzione kzalloc per la entry della bitmask %lld.\n", MOD_NAME, index);
+
             for(roll_index=0; roll_index<index; roll_index++)
             {
                 kfree(bitmask[roll_index]);    
             }
-            printk("%s: deallocazioni eseguite con successo.\n", MOD_NAME);
+
+            printk("%s: [ERRORE INIZIALIZZAZIONE CORE - BITMASK] Deallocazioni eseguite con successo.\n", MOD_NAME);
+
 	        return 1;
         }
 
@@ -490,10 +496,10 @@ int init_bitmask(void) //
 
         brelse(bh);
 
-        printk("%s: Inizializzazione blocco bitmask #%lld è stata completata con successo.\n", MOD_NAME, index);
+        printk("%s: [INIZIALIZZAZIONE CORE - BITMASK] Inizializzazione blocco bitmask #%lld è stata completata con successo.\n", MOD_NAME, index);
     }
 
-    printk("%s: Inizializzazione bitmask completata con successo.\n", MOD_NAME);
+    printk("%s: [INIZIALIZZAZIONE CORE - BITMASK] Inizializzazione bitmask completata con successo.\n", MOD_NAME);
 
     return 0;
     
@@ -515,7 +521,7 @@ void check_consistenza(void) //
 
     while(bf!=NULL)
     {
-        printk("%s: valore indice del blocco inserito nella lista dei blocchi liberi è pari a %lld\n", MOD_NAME, bf->block_index);
+        printk("%s: [CHECK CONSISTENZA] valore indice del blocco inserito nella lista dei blocchi liberi è pari a %lld\n", MOD_NAME, bf->block_index);
     
         // Determino l'array di uint64_t */
         bitmask_entry = bf->block_index / (SOAFS_BLOCK_SIZE << 3);
@@ -527,7 +533,11 @@ void check_consistenza(void) //
 
         if(bitmask[bitmask_entry][array_entry] & (base << offset))
         {
-            printk("%s: Errore inconsistenza per l'indice %lld.\n", MOD_NAME, bf->block_index);
+            printk("%s: [CHECK CONSISTENZA] Errore inconsistenza per l'indice %lld.\n", MOD_NAME, bf->block_index);
+        }
+        else
+        {
+            printk("%s: [CHECK CONSISTENZA] Nessun errore di inconsistenza per l'indice %lld.\n", MOD_NAME, bf->block_index);
         }
         
         bf = bf->next;
@@ -606,11 +616,11 @@ int check_bit(uint64_t index) //
 
     if(bitmask[bitmask_entry][array_entry] & (base << offset))
     {
-        printk("%s: Il blocco di dati ad offset %lld è valido.\n", MOD_NAME, index);
+        printk("%s: [CHECK BIT BITMASK] Il blocco di dati ad offset %lld è valido.\n", MOD_NAME, index);
         return 1;
     }
 
-    printk("%s: Il blocco di dati ad offset %lld non è valido.\n", MOD_NAME, index);
+    //printk("%s: [CHECK BIT BITMASK] Il blocco di dati ad offset %lld non è valido.\n", MOD_NAME, index);
     
     return 0;
 }
@@ -754,7 +764,7 @@ int insert_free_list(uint64_t index) //
 
     if(new_item==NULL)
     {
-        printk("%s: [ERRORE INIT FREE LIST] Errore malloc() sorted_list.", MOD_NAME);
+        //printk("%s: [ERRORE INIZIALIZZAZIONE CORE - FREE LIST] Errore malloc() free list.", MOD_NAME);
         return 1;
     }
 
@@ -762,19 +772,19 @@ int insert_free_list(uint64_t index) //
 
     if(head_free_block_list == NULL)
     {
-        printk("%s: [INIT FREE LIST] Inserimento in testa blocco #%lld\n", MOD_NAME, index);
+        printk("%s: [[INIZIALIZZAZIONE CORE - FREE LIST] Inserimento in testa blocco #%lld\n", MOD_NAME, index);
         head_free_block_list = new_item;
         head_free_block_list -> next = NULL;
     }
     else
     {
-        printk("%s: [INIT FREE LIST] Inserimento non in testa blocco #%lld\n", MOD_NAME, index);
+        printk("%s: [INIZIALIZZAZIONE CORE - FREE LIST] Inserimento non in testa blocco #%lld\n", MOD_NAME, index);
         old_head = head_free_block_list;
         head_free_block_list = new_item;
         head_free_block_list -> next = old_head;
     }
 
-    printk("%s: [INIT FREE LIST] Inserito il blocco %lld nella lista dei blocchi liberi.\n", MOD_NAME, index);
+    //printk("%s: [INIZIALIZZAZIONE CORE - FREE LIST] Inserito il blocco %lld nella lista dei blocchi liberi.\n", MOD_NAME, index);
 
     asm volatile("mfence");
 
@@ -784,7 +794,7 @@ int insert_free_list(uint64_t index) //
 
 /*
  * index_free: array con indici dei blocchi liberi
- * actual_size: dimensione effettiva dell'array relativa al FS che ho montato
+ * actual_size: dimensione effettiva dell'array
  */
 int init_free_block_list(uint64_t *index_free, uint64_t actual_size) //
 {
@@ -795,38 +805,39 @@ int init_free_block_list(uint64_t *index_free, uint64_t actual_size) //
 
     if(SIZE_INIT < actual_size)
     {
-        printk("%s: [ERRORE INIT FREE LIST] Errore nella dimensione dell'array.\nACTUAL_SIZE = %lld\tSIZE_INIT = %d\n", MOD_NAME, actual_size, SIZE_INIT);
+        printk("%s: [ERRORE INIZIALIZZAZIONE CORE - FREE LIST]  Errore nella dimensione dell'array.\nACTUAL_SIZE = %lld\tSIZE_INIT = %d\n", MOD_NAME, actual_size, SIZE_INIT);
         return 1;
     }
 
     for(index=0; index<actual_size;index++)
     {
-        printk("%s: [INIT FREE LIST] Inserimento del blocco %lld all'interno della lista...\n", MOD_NAME, index_free[index]);
+        printk("%s: [INIZIALIZZAZIONE CORE - FREE LIST] Inserimento del blocco %lld all'interno della lista in corso...\n", MOD_NAME, index_free[index]);
 
         ret = insert_free_list(index_free[index]);
 
-        printk("%s: [INIT FREE LIST] Blocco #%lld inserito correttamente all'interno della lista\n", MOD_NAME, index_free[index]);
-
         if(ret)
         {
-            printk("%s: [ERRORE INIT FREE LIST] Errore kzalloc() free_list indice %lld.\n", MOD_NAME, index);
+            printk("%s: [ERRORE INIZIALIZZAZIONE CORE - FREE LIST] Errore kzalloc() free_list indice %lld.\n", MOD_NAME, index);
             for(roll_index=0; roll_index<index;roll_index++)
             {
                 roll_bf = head_free_block_list->next;
                 kfree(head_free_block_list);
                 head_free_block_list = roll_bf;
             }
+
             return 1;
-        }        
+        }
+
+        printk("%s: [INIZIALIZZAZIONE CORE - FREE LIST] Blocco #%lld inserito correttamente all'interno della lista\n", MOD_NAME, index_free[index]);        
     }
 
     num_block_free_used = actual_size;
 
     pos = index_free[actual_size - 1] + 1;
 
-    printk("%s: [INIT FREE LIST] Il numero di blocchi liberi utilizzati è pari a %lld.\n", MOD_NAME, num_block_free_used);
+    printk("%s: [INIZIALIZZAZIONE CORE - FREE LIST] Il numero di blocchi liberi utilizzati è pari a %lld.\n", MOD_NAME, num_block_free_used);
 
-    printk("%s: [INIT FREE LIST] Il valore di pos è pari a %lld.\n", MOD_NAME, pos);
+    printk("%s: [INIZIALIZZAZIONE CORE - FREE LIST] Il valore di pos è pari a %lld.\n", MOD_NAME, pos);
 
     check_consistenza();
 
@@ -1117,8 +1128,8 @@ no_head:
 
 /*
  * Inserisce un nuovo elemento all'interno della lista
- * nella hash table e all'interno della lista ordinata
- * dei blocchi. Questa funzione viene eseguita in concorrenza.
+ * nella hash table e all'interno della lista dei blocchi
+ * ordinata. Questa funzione viene eseguita in concorrenza.
  */
 int insert_hash_table_valid_and_sorted_list_conc(char *data_block_msg, uint64_t pos, uint64_t index)
 {
@@ -1273,7 +1284,7 @@ static int insert_hash_table_valid_and_sorted_list(char *data_block_msg, uint64_
     
     if(new_item == NULL)
     {
-        printk("%s: Errore malloc() nell'allocazione del nuovo elemento da inserire nella hash table.", MOD_NAME);
+        printk("%s: [ERRORE INIZIALIZZAZIONE CORE - HT + SORTED] Errore malloc() nell'allocazione del nuovo elemento da inserire nella hash table.", MOD_NAME);
         return 1;
     }
 
@@ -1288,15 +1299,11 @@ static int insert_hash_table_valid_and_sorted_list(char *data_block_msg, uint64_
 
     if(new_item->msg == NULL)
     {
-        printk("%s: Errore malloc() nell'allocazione della memoria per il messaggio dell'elemento da inserire nella hash table.", MOD_NAME);
+        printk("%s: [ERRORE INIZIALIZZAZIONE CORE - HT + SORTED] Errore malloc() nell'allocazione della memoria per il messaggio dell'elemento da inserire nella hash table.", MOD_NAME);
         return 1;
     }
 
-    printk("%s: Stringa da copiare per il blocco con indice %lld - %s.\n", MOD_NAME, index, data_block_msg);
-
     strncpy(new_item->msg, data_block_msg, len);
-
-    printk("Lunghezza della stringa copiata %ld - Dimensione del buffer allocato %ld.\n", strlen(data_block_msg) + 1, strlen(new_item->msg) + 1);
 
     /* Inserimento in testa */
     if(ht_entry->head_list == NULL)
@@ -1312,7 +1319,7 @@ static int insert_hash_table_valid_and_sorted_list(char *data_block_msg, uint64_
         new_item->hash_table_next = old_head;
     }
 
-    printk("%s: Inserimento blocco %lld nella entry #%d completato con successo.\n", MOD_NAME, index, num_entry_ht);
+    printk("%s: [INIZIALIZZAZIONE CORE - HT + SORTED] Inserimento blocco %lld nella entry #%d completato con successo.\n", MOD_NAME, index, num_entry_ht);
 
     /* Inserimento del blocco nella lista ordinata */
     insert_sorted_list(new_item);
@@ -1339,14 +1346,14 @@ int init_ht_valid_and_sorted_list(uint64_t num_data_block) //
 
     if(sbi->num_block_free > sbi->num_block)
     {
-        printk("%s: Numero di blocchi liberi maggiore del numero dei blocchi totale\n", MOD_NAME);
+        printk("%s: [ERRORE INIZIALIZZAZIONE CORE - HT + SORTED] Numero di blocchi liberi maggiore del numero dei blocchi totale\n", MOD_NAME);
         return 1;
     }
     
     if(sbi->num_block_free == sbi->num_block)
     {
-        printk("%s: Non ci sono blocchi validi\n", MOD_NAME);
-        tail_sorted_list = NULL;
+        printk("%s: [INIZIALIZZAZIONE CORE - HT + SORTED] Non ci sono blocchi attualmente validi\n", MOD_NAME);
+        //tail_sorted_list = NULL;
         head_sorted_list = NULL;
         return 0;
     }
@@ -1368,7 +1375,7 @@ int init_ht_valid_and_sorted_list(uint64_t num_data_block) //
 
         if(bh == NULL)
         {
-            printk("%s: Errore esecuzione della sb_bread() per la lettura del blocco di dati con indice %lld...\n", MOD_NAME, index);
+            printk("%s: [ERRORE INIZIALIZZAZIONE CORE - HT + SORTED] Errore esecuzione della sb_bread() per la lettura del blocco di dati con indice %lld...\n", MOD_NAME, index);
             return 1;
         }
 
@@ -1378,11 +1385,11 @@ int init_ht_valid_and_sorted_list(uint64_t num_data_block) //
 
         if(ret)
         {
-            printk("%s: Errore inserimento nella HT del blocco con indice %lld.\n", MOD_NAME, index);
+            printk("%s: [ERRORE INIZIALIZZAZIONE CORE - HT + SORTED] Errore inserimento nella HT del blocco con indice %lld.\n", MOD_NAME, index);
             return 1;
         }
 
-        printk("%s: Il blocco di dati con indice %lld è valido e nella lista ordinata si trova in posizione %lld.\n", MOD_NAME, index, data_block->pos);
+        printk("%s: [INIZIALIZZAZIONE CORE - HT + SORTED] Il blocco di dati con indice %lld è valido e nella lista ordinata si trova in posizione %lld.\n", MOD_NAME, index, data_block->pos);
 
         brelse(bh);        
         
@@ -1403,13 +1410,13 @@ int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint
 
     if(sb_global == NULL)
     {
-        printk("%s: Il contenuto del superblocco non è valido. Impossibile inizializzare le strutture dati core.\n", MOD_NAME);
+        printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Il contenuto del superblocco non è valido. Impossibile inizializzare le strutture dati core.\n", MOD_NAME);
         return 1;
     }
 
     if(num_data_block <= 0)
     {
-        printk("%s: Il numero di blocchi del device non è valido. Impossibile inizializzare le strutture dati core.\n", MOD_NAME);
+        printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Il numero dei blocchi di dati del device non è valido. Impossibile inizializzare le strutture dati core.\n", MOD_NAME);
         return 1;
     }
 
@@ -1418,37 +1425,35 @@ int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint
 
     if(ret)
     {
-        printk("%s: Errore inizializzazione bitmask, non è possibile completare l'inizializzazione core.\n", MOD_NAME);
-        // kfree(hash_table_valid);
+        printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Errore inizializzazione bitmask, non è possibile completare l'inizializzazione core.\n", MOD_NAME);
         return 1;
     }
 
     sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
 
-    printk("%s: Valore di 'actual_size' è pari a %lld\n", MOD_NAME, actual_size);
+    printk("%s: [INIZIALIZZAZIONE CORE] Valore di 'actual_size' è pari a %lld\n", MOD_NAME, actual_size);
 
     if( (actual_size < 0) || (sbi->num_block_free < 0) )
     {
-        printk("%s: Le informazioni sui blocchi liberi non sono valide.\n", MOD_NAME);
+        printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Le informazioni sui blocchi liberi non sono valide.\n", MOD_NAME);
         return 1;
     }
 
     if( (actual_size > 0) && (sbi->num_block_free == 0) )
     {
-        printk("%s: Problema di inconsistenza tra il numero dei blocchi liberi e la dimensione dell'array.\n", MOD_NAME);
+        printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Problema di inconsistenza tra il numero dei blocchi liberi e la dimensione dell'array.\n", MOD_NAME);
         return 1;
     }
 
 
     /* Inizializzo la free_block_list */
-
     if(actual_size > 0)
     {
         ret = init_free_block_list(index_free, actual_size);
+
         if(ret)
         {
-            printk("%s: Errore inizializzazione free_block_list, non è possibile completare l'inizializzazione core.\n", MOD_NAME);
-            // kfree(hash_table_valid);
+            printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Errore inizializzazione free_block_list, non è possibile completare l'inizializzazione core.\n", MOD_NAME);
             // kfree(bitmask);
             return 1;
         }
@@ -1460,7 +1465,6 @@ int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint
 
 
     /* Inizializzazione HT e sorted_list */
-
     compute_num_rows(num_data_block);
 
     size_ht = x * sizeof(struct ht_valid_entry);
@@ -1469,11 +1473,9 @@ int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint
 
     if(hash_table_valid == NULL)
     {
-        printk("%s: Errore esecuzione kmalloc() nell'allocazione della memoria per la tabella hash.\n", MOD_NAME);
+        printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Errore esecuzione kmalloc() nell'allocazione della memoria per la tabella hash.\n", MOD_NAME);
         return 1;
     }
-
-    printk("%s: Il numero di liste nella tabella hash è pari a %d\n", MOD_NAME, x);
 
     for(index=0;index<x;index++)
     {
@@ -1484,8 +1486,8 @@ int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint
 
     if(ret)
     {
-        printk("%s: Errore inizializzazione HT e sorted_list\n", MOD_NAME);
-        // fai le kfree
+        printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Errore inizializzazione HT e sorted_list\n", MOD_NAME);
+        // fai le kfree BITMASK e FREE LIST
         return 1;
     }
 
@@ -1493,8 +1495,8 @@ int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint
 
     if(gp == NULL)
     {
-        printk("%s: Errore inizializzazione grace period\n", MOD_NAME);
-        // fai le kfree
+        printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Errore inizializzazione grace period\n", MOD_NAME);
+        free_all_memory();
         return 1;
     }
 
@@ -1510,7 +1512,7 @@ int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint
         gp->standing_sorted[i] = 0x0;
     }
 
-    debugging_init();
+    //debugging_init();
 
     return 0;
 }

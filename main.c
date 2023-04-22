@@ -241,13 +241,13 @@ asmlinkage int sys_put_data(char * source, size_t size){
 
     if(!ret)
     {
-        LOG_DEV_ERR("get_data");
+        LOG_DEV_ERR("put_data");
         return -ENODEV;
     }
 
     if(check_size(size))
     {
-        LOG_PARAM_ERR("get_data");
+        LOG_PARAM_ERR("put_data");
         return -EINVAL;
     }
 
@@ -451,7 +451,7 @@ asmlinkage int sys_invalidate_data(uint64_t offset){
 
     if(!ret)
     {
-        LOG_DEV_ERR("get_data");
+        LOG_DEV_ERR("invalidate_data");
         return -ENODEV;
     }
 
@@ -460,7 +460,7 @@ asmlinkage int sys_invalidate_data(uint64_t offset){
     /* Faccio un controllo sull'indice del blocco passato come parametro */
     if( check_offset(offset, sbi) )
     {
-        LOG_PARAM_ERR("get_data");
+        LOG_PARAM_ERR("invalidate_data");
         return -EINVAL;
     }
 
@@ -516,8 +516,8 @@ static int soafs_init(void)
 
 	AUDIT
     {
-        printk("%s: received sys_call_table address %px\n",MOD_NAME,(void*)the_syscall_table);
-     	printk("%s: initializing - hacked entries %d\n",MOD_NAME,HACKED_ENTRIES);
+        printk("%s: [MONTAGGIO MODULO] received sys_call_table address %px\n",MOD_NAME,(void*)the_syscall_table);
+     	printk("%s: [MONTAGGIO MODULO] initializing - hacked entries %d\n",MOD_NAME,HACKED_ENTRIES);
 	}
 
 	new_sys_call_array[0] = (unsigned long)sys_get_data;
@@ -528,7 +528,7 @@ static int soafs_init(void)
 
     if (ret != HACKED_ENTRIES)
     {
-        printk("%s: could not hack %d entries (just %d)\n",MOD_NAME,HACKED_ENTRIES,ret); 
+        printk("%s: [ERRORE MONTAGGIO MODULO] could not hack %d entries (just %d)\n",MOD_NAME,HACKED_ENTRIES,ret); 
         return -1;      
     }
 
@@ -541,17 +541,17 @@ static int soafs_init(void)
 
 	protect_memory();
 
-    printk("%s: all new system-calls correctly installed on sys-call table\n",MOD_NAME);
+    printk("%s: [MONTAGGIO MODULO] all new system-calls correctly installed on sys-call table\n",MOD_NAME);
 
     ret = register_filesystem(&soafs_fs_type);
 
     if (likely(ret == 0))
     {
-        printk("%s: File System 'soafs' registrato correttamente.\n",MOD_NAME);
+        printk("%s: [MONTAGGIO MODULO] File System 'soafs' registrato correttamente.\n",MOD_NAME);
     }    
     else
     {
-        printk("%s: Errore nella registrazione del File System 'soafs'. - Errore: %d\n", MOD_NAME,ret);
+        printk("%s: [ERRORE MONTAGGIO MODULO] Errore nella registrazione del File System 'soafs'. - Errore: %d\n", MOD_NAME,ret);
     }
 
     return ret;
@@ -562,7 +562,7 @@ static void soafs_exit(void)
     int ret;
     int i;
                 
-    printk("%s: shutting down\n",MOD_NAME);
+    printk("%s: [SMONTAGGIO MODULO] shutting down\n",MOD_NAME);
 
 	unprotect_memory();
 
@@ -573,17 +573,17 @@ static void soafs_exit(void)
 
 	protect_memory();
 
-    printk("%s: sys-call table restored to its original content\n",MOD_NAME);
+    printk("%s: [SMONTAGGIO MODULO] sys-call table restored to its original content\n",MOD_NAME);
 
     ret = unregister_filesystem(&soafs_fs_type);
 
     if (likely(ret == 0))
     {
-        printk("%s: Rimozione della tipologia di File System 'soafs' avvenuta con successo.\n",MOD_NAME);
+        printk("%s: [SMONTAGGIO MODULO] Rimozione della tipologia di File System 'soafs' avvenuta con successo.\n",MOD_NAME);
     }
     else
     {
-        printk("%s: Errore nella rimozione della tipologia di File System 'soafs' - Errore: %d\n", MOD_NAME, ret);
+        printk("%s: [ERRORE SMONTAGGIO MODULO] Errore nella rimozione della tipologia di File System 'soafs' - Errore: %d\n", MOD_NAME, ret);
     }
 
 }

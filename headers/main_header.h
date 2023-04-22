@@ -19,7 +19,7 @@
 #define LICENSE "GPL"
 
 /* Periodo per il kernel thread */
-#define PERIOD 1000000000
+#define PERIOD 10000000
 
 /* Maschera per recuperare il valore dell'epoca */
 #define MASK 0X8000000000000000

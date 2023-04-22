@@ -44,11 +44,7 @@ struct block_free {
  * entry della tabella hash 'hash_table_valid'.
  */
 struct ht_valid_entry {
-//    unsigned long standing[EPOCHS];
-//    unsigned long epoch;
-//    struct mutex entry_mutex;
     struct block *head_list;
-//    int next_epoch_index;
 };
 
 
@@ -65,7 +61,7 @@ struct grace_period {
 
 
 extern struct block *head_sorted_list;                          /* Puntatore alla testa della lista contenente i blocchi nell'ordine di consegna. */
-extern struct block *tail_sorted_list;                          /* Puntatore alla coda della lista contenente i blocchi nell'ordine di consegna. */
+//extern struct block *tail_sorted_list;                          /* Puntatore alla coda della lista contenente i blocchi nell'ordine di consegna. */
 extern struct block_free *head_free_block_list;                 /* Puntatore alla testa della lista contenente i blocchi liberi. */
 extern struct ht_valid_entry *hash_table_valid;                 /* Hash table */
 extern struct grace_period *gp;

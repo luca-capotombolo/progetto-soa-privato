@@ -32,7 +32,7 @@
 /* Numero di Epoche */
 #define EPOCHS 2
 /* Numero di blocchi liberi con cui inizializzo la free_block_list */
-#define SIZE_INIT 4
+#define SIZE_INIT 40
 
 
 
@@ -45,7 +45,7 @@ struct soafs_super_block {
 	uint64_t magic;                                                         // MAGIC NUMBER
     uint64_t num_block;                                                     // NUMERO TOTALE DI BLOCCHI DEL DEVICE
     uint64_t num_block_free;                                                // NUMERO TOTALE DEI BLOCCHI LIBERI AL MONTAGGIO
-    uint64_t num_block_state;                                               // NUMERO TOTALE DEI BLOCCHI DI STATI
+    uint64_t num_block_state;                                               // NUMERO TOTALE DEI BLOCCHI DI STATO
     uint64_t update_list_size;                                              // NUMERO MASSIMO DI NUOVI BLOCCHI DA CARICARE
     uint64_t actual_size;                                                   // ACTUAL_SIZE <= SIZE_INIT
     uint64_t index_free[SIZE_INIT];                                         // SOTTOINSIEME DEI BLOCCHI LIBERI AL MONTAGGIO
@@ -92,6 +92,7 @@ struct soafs_sb_info {
 
 
 extern int check_is_mounted(void);                              //file_system.c
+extern void free_all_memory(void);                              //file_system.c
 extern struct file_system_type soafs_fs_type;                   //file_system.c
 extern int is_mounted;                                          //file_system.c
 extern char *mount_path;                                        //file_system.c
