@@ -17,11 +17,11 @@
  * mantiene un messaggio valido.
  */
 struct block {
-    uint64_t block_index;   //
-    uint64_t pos;           //         
-    char *msg;      //
-    struct block* hash_table_next;  //
-    struct block* sorted_list_next; //
+    uint64_t block_index;
+    uint64_t pos;      
+    char *msg;
+    struct block* hash_table_next;
+    struct block* sorted_list_next;
 };
 
 
@@ -61,7 +61,6 @@ struct grace_period {
 
 
 extern struct block *head_sorted_list;                          /* Puntatore alla testa della lista contenente i blocchi nell'ordine di consegna. */
-//extern struct block *tail_sorted_list;                          /* Puntatore alla coda della lista contenente i blocchi nell'ordine di consegna. */
 extern struct block_free *head_free_block_list;                 /* Puntatore alla testa della lista contenente i blocchi liberi. */
 extern struct ht_valid_entry *hash_table_valid;                 /* Hash table */
 extern struct grace_period *gp;
@@ -77,7 +76,7 @@ extern int check_bit(uint64_t index);
 extern struct block_free * get_freelist_head(void);
 extern void set_bitmask(uint64_t index, int mode);
 extern int get_bitmask_block(void);
-extern int insert_hash_table_valid_and_sorted_list_conc(char *data_block_msg, uint64_t pos, uint64_t index);
+extern int insert_hash_table_valid_and_sorted_list_conc(char *data_block_msg, uint64_t pos, uint64_t index, struct block_free *bf);
 extern int invalidate_block(uint64_t index);
 
 #endif //data_structure_core.h

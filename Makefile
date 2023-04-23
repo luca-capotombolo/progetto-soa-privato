@@ -5,7 +5,7 @@ my_module-objs += main.o ./file-system/file.o ./file-system/dir.o ./file-system/
 A = $(shell cat /sys/module/the_usctm/parameters/sys_call_table_address)
 
 # Numero totale dei blocchi esclusi i blocchi di stato
-NBLOCKS_FS = 12
+NBLOCKS_FS = 102
 
 UPDATE_LIST_SIZE = 10
 ACTUAL_SIZE = 10
@@ -25,15 +25,15 @@ get-param:
 	./file-system/parametri $(NBLOCKS_FS)
 
 create-fs:
-	dd bs=4096 count=$(PARAM) if=/dev/zero of=./file-system/image2
-	./file-system/singlefilemakefs ./file-system/image2 $(NBLOCKS_FS) $(UPDATE_LIST_SIZE) $(ACTUAL_SIZE)
+	dd bs=4096 count=$(PARAM) if=/dev/zero of=./file-system/image
+	./file-system/singlefilemakefs ./file-system/image $(NBLOCKS_FS) $(UPDATE_LIST_SIZE) $(ACTUAL_SIZE)
 
 mount-module:
 	insmod my_module.ko the_syscall_table=$(A)
 
 mount-fs:
 	mkdir ./file-system/mount
-	sudo mount -o loop,"./file-system/mount/" -t soafs ./file-system/image2 ./file-system/mount/
+	sudo mount -o loop,"./file-system/mount/" -t soafs ./file-system/image ./file-system/mount/
 
 umount-fs:
 	sudo umount ./file-system/mount/

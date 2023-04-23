@@ -264,7 +264,6 @@ asmlinkage uint64_t sys_put_data(char * source, size_t size){
     }
 
     item = NULL;
-    n = 0;
 
     /*
      * Recupero l'indice del blocco libero da utilizzare per inserire
@@ -278,8 +277,11 @@ asmlinkage uint64_t sys_put_data(char * source, size_t size){
         /*
          * Devo trovare nuovi blocchi liberi tra quelli
          * che erano liberi al tempo di montaggio e che
-         * finora non ho mai utilizzato.
+         * finora non ho mai utilizzato (i.e., il cui
+         * indice non è stato mai caricato nella lista).
          */
+
+        n = 0;
 
 retry:
 
@@ -295,14 +297,14 @@ retry:
         /* Inserisco i nuovi blocchi liberi all'interno della lista. */
         ret = get_bitmask_block();
 
+        /* Rilascio il mutex per terminare la sezione critica */
+        mutex_unlock(&free_list_mutex);
+
         if(ret)
         {
                 printk("%s: [ERRORE PUT DATA] Errore esecuzione kmalloc() nel recupero di un blocco libero\n", MOD_NAME);
                 return -EIO;    
         }
-
-        /* Rilascio il mutex per terminare la sezione critica */
-        mutex_unlock(&free_list_mutex);
 
         /*
          * Per via della concorrenza, è possibile che la testa
@@ -319,8 +321,9 @@ retry:
          * In questo caso, la lista si è nuovamente svuotata. Si tenta
          * di caricare nuovamente i blocchi liberi nella lista.
          */
-        if( (head_free_block_list == NULL) &&  (num_block_free_used < sbi->num_block_free))
+        if( (head_free_block_list == NULL) && (num_block_free_used < sbi->num_block_free))
         {
+            printk("%s: [ERRORE PUT DATA] Tentativo #%d fallito per il recupero dei blocchi liberi\n", MOD_NAME, n);
             n++;
             goto retry;
         }
@@ -337,8 +340,6 @@ retry:
     }
 
     index = item -> block_index;
-
-    kfree(item);
 
     printk("%s: [PUT DATA] Indice del blocco libero da utilizzare - %lld\n", MOD_NAME, index);
 
@@ -378,7 +379,7 @@ retry:
 
     if(msg == NULL)
     {
-        LOG_KMALLOC_ERR("put_data");
+        LOG_KMALLOC_ERR("ERRORE PUT DATA");
         return -EIO;    
     }
 
@@ -392,9 +393,9 @@ retry:
         msg[msg_size - 1] = '\0';
     }
 
-    printk("%s: [PUT DATA] E' stato richiesto di scrivere il messaggio '%s'\n", MOD_NAME, msg);
+    printk("%s: [PUT DATA] E' stato richiesto di scrivere il messaggio '%s'", MOD_NAME, msg);
 
-    ret = insert_hash_table_valid_and_sorted_list_conc(msg, sbi->num_block, index);
+    ret = insert_hash_table_valid_and_sorted_list_conc(msg, sbi->num_block, index, item);
 
     if(ret)
     {
@@ -403,7 +404,13 @@ retry:
         return -EIO;
     }
 
+    /* Dealloco la struttura dati che rappresenta il blocco libero ottenuto in precedenza */
+    kfree(item);
+
+    /* Comunico che il blocco inserito risulta essere valido */
     set_bitmask(index, 1);    
+
+    printk("%s: [PUT DATA] Il messaggio '%s' è stato inserito con successo\n", MOD_NAME, msg);
 
     return index;
 

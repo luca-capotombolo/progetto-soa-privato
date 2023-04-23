@@ -7,10 +7,18 @@
 #include <stdint.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <sched.h>
 
 #define _GNU_SOURCE
-#define NBLOCKS 8
+#define NBLOCKS 100
+#define NTHREADS 10
 
+int count = 0;
+
+
+
+
+/* -------------------------------------------------------------------------------------------- */
 void get_data(char *msg, size_t size, uint64_t offset)
 {
     int ret;
@@ -24,6 +32,9 @@ void get_data(char *msg, size_t size, uint64_t offset)
     memset(msg, 0, 4000);
 }
 
+
+
+/* -------------------------------------------------------------------------------------------- */
 void put_data(const char *msg)
 {
 
@@ -31,16 +42,37 @@ void put_data(const char *msg)
 
     ret = syscall(174, msg, strlen(msg) + 1);
 
-    printf("Valore di ritorno della system call - %d\n", ret);
+    printf("Valore di ritorno della system call: %d\n", ret);
 }
 
+
+void put_data_thread(uint64_t id)
+{
+    char msg[80];
+    uint64_t ret;
+
+    memset(msg,0,80);
+
+    sprintf(msg, "%ld", id);
+
+    __sync_fetch_and_add(&count,1);
+
+    while(count!=NTHREADS);
+
+    ret = syscall(174, msg, strlen(msg) + 1);
+
+    printf("Valore di ritorno della system call: %ld\n", ret);
+
+    
+}
+/* -------------------------------------------------------------------------------------------- */
 void read_file()
 {
-    char msg_read[4000];
+    char msg_read[400000];
     int fd;
     int ret;
 
-    memset(msg_read, 0, 4000);
+    memset(msg_read, 0, 400000);
 
     fd = open("/home/cap/Scrivania/progetto-soa/privato/progetto-soa-privato/file-system/mount/the-file", O_RDWR);
 
@@ -53,7 +85,7 @@ void read_file()
 
     printf("fd = %d\n", fd);
 
-    ret = read(fd, (void *)msg_read, 4000);
+    ret = read(fd, (void *)msg_read, 400000);
 
     if(ret==-1)
     {
@@ -70,6 +102,7 @@ void read_file()
 
 
 
+/* -------------------------------------------------------------------------------------------- */
 void * read_block(void *arg)
 {
     char *msg;
@@ -100,9 +133,11 @@ void empty_device(void)
 }
 
 
+
+/* -------------------------------------------------------------------------------------------- */
 void * write_block(void *arg)
 {
-    put_data("Ciao a tutti\n");    
+    put_data_thread((uint64_t)arg);    
 }
 
 
@@ -112,11 +147,12 @@ void write_all_blocks(void)
     uint64_t i;
     pthread_t tid;
 
-    for(i=0;i<NBLOCKS; i++)
+    for(i=0;i<NTHREADS; i++)
     {
-        pthread_create(&tid,NULL,write_block,(void *)i);
+        pthread_create(&tid,NULL,write_block,(void *)(i % NBLOCKS));
     }
 }
+/* -------------------------------------------------------------------------------------------- */
 
 
 
@@ -169,9 +205,7 @@ int main(int argc, char** argv){
 
     //read_file();
 
-    //write_all_blocks();
-
-    put_data(str1);
+    write_all_blocks();
 
     pause();
 

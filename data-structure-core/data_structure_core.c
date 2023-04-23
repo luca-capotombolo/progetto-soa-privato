@@ -8,7 +8,6 @@
 
 
 struct block *head_sorted_list = NULL;                          /* Puntatore alla testa della lista contenente i blocchi nell'ordine di consegna. */
-//struct block *tail_sorted_list = NULL;                          /* Puntatore alla coda della lista contenente i blocchi nell'ordine di consegna.  */
 struct block_free *head_free_block_list = NULL;                 /* Puntatore alla testa della lista contenente i blocchi liberi. */
 struct ht_valid_entry *hash_table_valid = NULL;                 /* Hash table */
 uint64_t num_block_free_used = 0;
@@ -413,6 +412,11 @@ sleep_again:
 
 
 
+/*
+ * Questa funzione ha il compito di inizializzare la struttura
+ * dati della bitmask per mantenere le informazioni sulla validità
+ * dei blocchi del dispositivo.
+ */
 int init_bitmask(void)
 {
     struct buffer_head *bh;
@@ -507,7 +511,13 @@ int init_bitmask(void)
 
 
 
-void check_consistenza(void) //
+/*
+ * Questa funzione implementa un semplice controllo sulla
+ * consistenza delle informazioni presenti nella lista dei
+ * blocchi liberi rispetto alle informazioni mantenute nella
+ * bitmask.
+ */
+void check_consistenza(void)
 {
     struct block_free *bf;
     int bitmask_entry;
@@ -547,27 +557,29 @@ void check_consistenza(void) //
 
 
 /*
- * Restituisce l'indice del blocco libero in testa alla lista.
- * Questa funzione può essere eseguita in concorrenza.
+ * Restituisce l'indice del blocco libero che si trova in testa.
+ *  alla lista. Questa funzione può essere eseguita in concorrenza:
+ * più thread stanno cercando di prendere un blocco per inserire
+ * un nuovo messaggio.
  */
-struct block_free * get_freelist_head(void) //
+struct block_free * get_freelist_head(void)
 {
+    struct block_free *old_head;  
     int ret;
-    int n;
-    struct block_free *old_head;   
+    int n; 
 
     n = 0;
 
-retry:
+retry_freelist_head:
+
+    printk("%s: [PUT DATA - GET HEAD FREE LIST] Tentativo #%d di recupero del blocco in testa alla lista\n", MOD_NAME, n);
 
     old_head = head_free_block_list;
 
     /* Gestione di molteplici scritture concorrenti */
-
-    //if(head_free_block_list == NULL)
     if(old_head == NULL)
     {
-        printk("%s: La lista risulta essere attualmente vuota al tentativo #%d\n", MOD_NAME, n);
+        printk("%s: [ERRORE PUT DATA - GET HEAD FREE LIST] La lista risulta essere attualmente vuota al tentativo #%d\n", MOD_NAME, n);
         return NULL;
     }
 
@@ -579,10 +591,13 @@ retry:
 
         if(n > 10)
         {
+            printk("%s: [ERRORE PUT DATA - GET HEAD FREE LIST] Numero di tentativi massimo raggiunto per il recupero del blocco\n", MOD_NAME);
             return NULL;
         }
+
+        printk("%s: ERRORE PUT DATA - GET HEAD FREE LIST Conflitto nel determinare il blocco\n", MOD_NAME);
     
-        goto retry;
+        goto retry_freelist_head;
     }
 
     return old_head;
@@ -590,7 +605,11 @@ retry:
 
 
 
-int check_bit(uint64_t index) //
+/*
+ * Questa funzione ha il coompiti di verificare la validità
+ * del blocco il cui indice è passato come parametro.
+ */
+int check_bit(uint64_t index)
 {
     uint64_t base;
     uint64_t offset;
@@ -627,7 +646,12 @@ int check_bit(uint64_t index) //
 
 
 
-int get_bitmask_block(void) //
+/*
+ * Questa funzione ha il compito di recuperare gli
+ * indici dei blocchi liberi da poter utilizzare
+ * per inserire i nuovi messaggi.
+ */
+int get_bitmask_block(void)
 {
     int ret;
     uint64_t index;
@@ -658,7 +682,7 @@ int get_bitmask_block(void) //
 
     if( (head_free_block_list != NULL) || (num_block_free_used == sbi->num_block_free))
     {
-        printk("%s: I blocchi sono stati già determinati\n", MOD_NAME);
+        printk("%s: [PUT DATA - RECUPERO BLOCCHI] I blocchi sono stati già determinati o invalidati\n", MOD_NAME);
         return 0;
     }
 
@@ -681,7 +705,7 @@ int get_bitmask_block(void) //
     for(index = pos; index<num_block_data; index++)
     {
 
-        printk("%s: Verifica della validità del blocco con indice %lld\n", MOD_NAME, index);
+        printk("%s: [PUT DATA - RECUPERO BLOCCHI] Verifica della validità del blocco con indice %lld\n", MOD_NAME, index);
 
         ret = check_bit(index);
 
@@ -694,28 +718,29 @@ int get_bitmask_block(void) //
 
             if(bf == NULL)
             {
-                    printk("%s: Errore kmalloc() nuovo blocco libero con indice %lld\n", MOD_NAME, index);
+                    printk("%s: [ERRORE PUT DATA - RECUPERO BLOCCHI] Errore esecuzione della kmalloc()\n", MOD_NAME);
                     return 1;
             }
 
             bf -> block_index = index;
 retry:
 
+            /* Implemento un inserimento in testa alla lista */
             old_head = head_free_block_list;
         
-            /* Implemento un inserimento in testa alla lista */
             bf->next = head_free_block_list;
 
             ret = __sync_bool_compare_and_swap(&head_free_block_list, old_head, bf);
 
             if(!ret)
             {
+                    printk("%s: [ERRORE PUT DATA - RECUPERO BLOCCHI] Errore inserimento del blocco in concorrenza\n", MOD_NAME);
                     goto retry;
             }
 
             pos = index + 1;
 
-            printk("%s: Il nuovo valore di pos è pari a %lld\n", MOD_NAME, pos);
+            printk("%s: [PUT DATA - RECUPERO BLOCCHI] Il nuovo valore di pos è pari a %lld\n", MOD_NAME, pos);
 
             num_block_free_used++;
 
@@ -731,11 +756,11 @@ retry:
             {
                 if(num_block_free_used == sbi->num_block_free)
                 {
-                    printk("%s: Ho esaurito il numero di blocchi liberi totali\n", MOD_NAME);
+                    printk("%s: [PUT DATA - RECUPERO BLOCCHI] Ho esaurito il numero di blocchi liberi totali\n", MOD_NAME);
                 }
                 else
                 {
-                    printk("%s: Ho inserito il numero massimo di elementi all'interno della lista\n", MOD_NAME);
+                    printk("%s: [PUT DATA - RECUPERO BLOCCHI] Ho inserito il numero massimo di elementi all'interno della lista\n", MOD_NAME);
                 }
 
                 break;  
@@ -750,10 +775,37 @@ retry:
 
 
 
+/* E' la versione concorrente della funzione 'insert_free_list' */
+void insert_free_list_conc(struct block_free *item)
+{
+    struct block_free *old_head;
+    int ret;
+
+retry_insert_free_list_conc:
+
+    old_head = head_free_block_list;
+
+    item->next = old_head;
+
+    ret = __sync_bool_compare_and_swap(&(head_free_block_list), old_head, item);
+
+    if(!ret)
+    {
+        goto retry_insert_free_list_conc;
+    }
+
+    printk("%s: [INSERT FREE LIST] L'inserimento in testa del blocco %lld avvenuto con successo\n", MOD_NAME, item->block_index);
+}
+
+
+
+
+
 /*
  * Inserisce un nuovo elemento all'interno della lista free_block_list.
  * L'inserimento viene fatto in testa poiché non mi importa mantenere
- * alcun ordine tra i blocchi liberi.
+ * alcun ordine tra i blocchi liberi. Questa funzione non viene eseguita
+ * in concorrenza.
  */
 int insert_free_list(uint64_t index) //
 {
@@ -792,9 +844,13 @@ int insert_free_list(uint64_t index) //
 }
 
 
+
 /*
  * index_free: array con indici dei blocchi liberi
  * actual_size: dimensione effettiva dell'array
+ *
+ * Questa funzione ha il compito di inizializzare la lista contenente
+ * gli indici dei blocchi liberi.
  */
 int init_free_block_list(uint64_t *index_free, uint64_t actual_size) //
 {
@@ -846,7 +902,11 @@ int init_free_block_list(uint64_t *index_free, uint64_t actual_size) //
 
 
 
-void set_bitmask(uint64_t index, int mode) //
+/*
+ * Questa funzione mi consente di modificare le informazioni
+ * di validità dei blocchi all'interno della bitmask.
+ */
+void set_bitmask(uint64_t index, int mode)
 {
     uint64_t base;
     uint64_t offset;
@@ -911,12 +971,12 @@ int insert_sorted_list_conc(struct block *block)
 
         if(!ret)
         {
-            printk("%s: L'inserimento in coda non è stato eseguito poiché la lista non è più vuota\n", MOD_NAME);
+            printk("%s: [ERRORE PUT DATA - INSERIMENTO HT + SORTED] L'inserimento in coda non è stato eseguito poiché la lista non è più vuota\n", MOD_NAME);
             n++;
             goto no_empty;        
         }
 
-        printk("%s: Inserimento in coda nella lista ordinata effettuato con successo per il blocco %lld\n", MOD_NAME, block->block_index);
+        printk("%s: [PUT DATA - INSERIMENTO HT + SORTED] Inserimento in coda nella lista ordinata effettuato con successo per il blocco %lld\n", MOD_NAME, block->block_index);
     
         return 0;
     }
@@ -932,7 +992,7 @@ no_empty:
 
     if(n > 10)
     {
-        printk("%s: Il numero di tentativi massimo consentito %d è stato raggiunto per l'inserimento nella sorted list del blocco %lld\n", MOD_NAME, n, block->block_index);
+        printk("%s: [ERRORE PUT DATA - INSERIMENTO HT + SORTED] Numero tentativi massimo raggiunto per l'inserimento nella sorted list del blocco %lld\n", MOD_NAME, block->block_index);
         return 1;
     }
 
@@ -947,12 +1007,12 @@ no_empty:
 
     if(!ret)
     {
-        printk("%s: Tentativo di inserimento #%d del blocco %lld terminato senza successo\n", MOD_NAME, n, block->block_index);
+        printk("%s: [ERRORE PUT DATA - INSERIMENTO HT + SORTED] Tentativo di inserimento #%d del blocco %lld terminato senza successo\n", MOD_NAME, n, block->block_index);
         n++;
         goto no_empty;
     }
 
-    printk("%s: Inserimento in coda nella lista ordinata effettuato con successo per il blocco %lld\n", MOD_NAME, block->block_index);
+    printk("%s: [PUT DATA - INSERIMENTO HT + SORTED] Inserimento in coda nella lista ordinata effettuato con successo per il blocco %lld al tentativo %d\n", MOD_NAME, block->block_index, n);
 
     return 0;    
 }
@@ -1037,6 +1097,11 @@ void check_rollback(uint64_t index, struct ht_valid_entry * ht_entry)
 
 
 
+/*
+ * Esegue la procedura di rollback per l'inserimento di un
+ * nuovo blocco. Più precisamente, rimuove il blocco dalla
+ * lista corrispondente nella hash table.
+ */
 static void rollback(uint64_t index, struct ht_valid_entry * ht_entry)
 {
 
@@ -1074,7 +1139,7 @@ static void rollback(uint64_t index, struct ht_valid_entry * ht_entry)
             goto no_head;
         }
 
-        printk("%s: Rollback completato con successo: blocco %lld eliminato dalla HT\n", MOD_NAME, index);
+        printk("%s: [PUT DATA - ROLLBACK] Rollback completato con successo: blocco %lld eliminato dalla HT\n", MOD_NAME, index);
 
         kfree(curr);
 
@@ -1104,7 +1169,7 @@ no_head:
 
     if(curr == NULL)
     {
-        printk("%s: [ERRORE] Il blocco %lld da rimuovere non è presente nella lista\n", MOD_NAME, index);
+        printk("%s: [ERRORE PUT DATA - ROLLBACK] Il blocco %lld da rimuovere non è presente nella lista\n", MOD_NAME, index);
         return ;
     }
 
@@ -1114,12 +1179,12 @@ no_head:
     {
         n++;
 
-        printk("%s: Tentativo #%d fallito nell'esecuzione della procedura di rollback\n", MOD_NAME, n);
+        printk("%s: [ERRORE PUT DATA - ROLLBACK] Tentativo #%d fallito nell'esecuzione della procedura di rollback\n", MOD_NAME, n);
 
         goto no_head;
     }
 
-    printk("%s: Rollback completato con successo: blocco %lld eliminato dalla HT\n", MOD_NAME, index);
+    printk("%s: [PUT DATA - ROLLBACK] Rollback completato con successo: blocco %lld eliminato dalla HT\n", MOD_NAME, index);
 
     kfree(curr);
 }
@@ -1127,11 +1192,26 @@ no_head:
 
 
 /*
+ * Questa funzione ha il compito di inserire l'indice del blocco libero
+ * all'interno della lista poiché l'inserimento del blocco non è avvenuto
+ * con successo.
+ */
+void rollback_insert_ht_sorted(struct block_free *item)
+{
+
+    insert_free_list_conc(item);
+
+    printk("%s: [ERRORE PUT DATA - INSERIMENTO HT + SORTED] Rollback eseguito con successo\n", MOD_NAME);    
+}
+
+
+
+/*
  * Inserisce un nuovo elemento all'interno della lista
  * nella hash table e all'interno della lista dei blocchi
- * ordinata. Questa funzione viene eseguita in concorrenza.
+ * ordinati. Questa funzione viene eseguita in concorrenza.
  */
-int insert_hash_table_valid_and_sorted_list_conc(char *data_block_msg, uint64_t pos, uint64_t index)
+int insert_hash_table_valid_and_sorted_list_conc(char *data_block_msg, uint64_t pos, uint64_t index, struct block_free *item)
 {
     int num_entry_ht;
     int ret;
@@ -1150,7 +1230,7 @@ int insert_hash_table_valid_and_sorted_list_conc(char *data_block_msg, uint64_t 
     
     if(new_item == NULL)
     {
-        printk("%s: Errore kmalloc() nell'allocazione del nuovo elemento da inserire nella hash table.", MOD_NAME);
+        printk("%s: [ERRORE PUT DATA - INSERIMENTO HT + SORTED] Errore esecuzione della kmalloc()\n", MOD_NAME);
         return 1;
     }
 
@@ -1169,7 +1249,7 @@ retry_mutex_inval_insert:
 
     if(n > 10)
     {
-        printk("%s: [CONFLITTO] Il numero massimo di tentativi %d per l'inserimento del blocco con indice %lld è stato raggiunto\n", MOD_NAME, n, index);
+        printk("%s: [ERRORE PUT DATA - INSERIMENTO HT + SORTED] Il numero massimo di tentativi %d per il blocco %lld è stato raggiunto\n", MOD_NAME, n, index);
         return 1;
     }
 
@@ -1177,7 +1257,7 @@ retry_mutex_inval_insert:
 
     if( sync_var & MASK_INVALIDATE )
     {
-        printk("%s: E' in corso un'invalidazione, è necessario attendere che l'invalidazione termini\n", MOD_NAME);
+        printk("%s: [ERRORE PUT DATA - INSERIMENTO HT + SORTED] (%d) E' in corso un'invalidazione, attendere...\n", MOD_NAME, n);
 
         mutex_unlock(&inval_insert_mutex);
 
@@ -1188,15 +1268,10 @@ retry_mutex_inval_insert:
         goto retry_mutex_inval_insert;
     }
 
-    /* 
-     * Comunico la presenza del thread che effettuerà
-     * l'inserimento di un nuovo blocco.
-     */
+    /* Comunico la presenza del thread che effettuerà l'inserimento di un nuovo blocco */
     __sync_fetch_and_add(&sync_var,1);
 
-    //asm(memory)
-
-    printk("%s: Comunicazione per l'inserimento del blocco %lld avvenuta con successo\n", MOD_NAME, index);
+    printk("%s: [PUT DATA - INSERIMENTO HT + SORTED] Segnalata la presenza per l'inserimento del blocco %lld\n", MOD_NAME, index);
 
     mutex_unlock(&inval_insert_mutex);
 
@@ -1208,10 +1283,18 @@ retry_insert_ht:
 
     if(n > 10)
     {
-        printk("%s: Il numero di tentativi massimo consentito %d è stato raggiunto per l'inserimento nella HT\n", MOD_NAME, n);
+        printk("%s: [ERRORE PUT DATA - INSERIMENTO HT + SORTED] (%d) Il numero di tentativi massimo raggiunto per l'inserimento nella HT\n", MOD_NAME, n);
 
-        __sync_fetch_and_sub(&sync_var,1);              /* Segnalo che l'operazione di inserimento si è conclusa con successo. */
+        __sync_fetch_and_sub(&sync_var,1);
+    
+        rollback_insert_ht_sorted(item);
 
+        /*
+         * In questo modo, sveglio i thread che sono in attesa
+         * della conclusione degli inserimenti. Se gli inserimenti
+         * sono effettivamente conclusi, allora possono procedere con
+         * l'invalidazione del blocco richiesto.
+         */
         wake_up_interruptible(&the_queue);
 
         return 1;
@@ -1225,22 +1308,22 @@ retry_insert_ht:
 
     if(!ret)
     {
-        printk("%s: Conflitto nell'inserimento in testa nella lista #%d della HT tentativo #%d\n", MOD_NAME, num_entry_ht, n);
+        printk("%s: [ERRORE PUT DATA - INSERIMENTO HT + SORTED] Conflitto inserimento in testa nella lista #%d della HT\n", MOD_NAME, num_entry_ht);
         n++;
         goto retry_insert_ht;
     }
 
-    printk("%s: Inserimento blocco %lld nella entry #%d della HT completato con successo.\n", MOD_NAME, index, num_entry_ht);
+    printk("%s: [PUT DATA - INSERIMENTO HT + SORTED] Inserimento blocco %lld nella entry #%d della HT completato con successo.\n", MOD_NAME, index, num_entry_ht);
 
     ret = insert_sorted_list_conc(new_item);            /* Inserimento del blocco nella lista ordinata */
 
     if(ret)
     {
-        printk("%s: Il numero di tentativi massimo consentito %d è stato raggiunto per l'inserimento nella sorted list\n", MOD_NAME, 10);
-
         rollback(new_item->block_index, ht_entry);
 
-        __sync_fetch_and_sub(&sync_var,1);              /* Segnalo che l'operazione di inserimento si è conclusa con successo. */
+        __sync_fetch_and_sub(&sync_var,1);
+
+        rollback_insert_ht_sorted(item);
 
         wake_up_interruptible(&the_queue);
 
@@ -1251,12 +1334,11 @@ retry_insert_ht:
 
     wake_up_interruptible(&the_queue);
 
-    printk("%s: Inserimento blocco %lld nella sorted list avvenuto con successo\n", MOD_NAME, index);
+    printk("%s: [PUT DATA - INSERIMENTO HT + SORTED] Inserimento blocco %lld nella sorted list avvenuto con successo\n", MOD_NAME, index);
 
     asm volatile("mfence");
 
-    return 0;   
-    
+    return 0;    
 }
 
 

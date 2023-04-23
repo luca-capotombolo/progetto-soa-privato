@@ -65,6 +65,7 @@ static int set_free_block(void)
     uint64_t index;
     uint64_t num_block_data;
     uint64_t counter;
+    uint64_t dim;
     uint64_t update_list_size;
     int ret;
     
@@ -120,6 +121,7 @@ static int set_free_block(void)
      * inseriti all'interno dell'array.
      */    
     counter = 0;
+    dim = 0;
 
     for(index = 0; index < num_block_data; index++)
     {
@@ -132,6 +134,7 @@ static int set_free_block(void)
             if(counter < update_list_size)
             {
                 free_blocks[counter] = index;
+                dim++;
             }          
 
             counter++;
@@ -143,9 +146,11 @@ static int set_free_block(void)
 
     printk("%s: [SMONTAGGIO - SET FREE BLOCK] Numero di blocchi liberi trovati %lld\n", MOD_NAME, counter);
 
-    b->actual_size = counter;
+    b->actual_size = dim;
+
+    printk("%s: [SMONTAGGIO - SET FREE BLOCK] Dimensione array %lld\n", MOD_NAME, dim);
     
-    for(index = 0; index < counter; index++)
+    for(index = 0; index < dim; index++)
     {
         b-> index_free[index] = free_blocks[index];
     }
