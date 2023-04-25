@@ -139,9 +139,76 @@ void compute_num_rows(uint64_t num_data_block) //
 
 
 /*
- * Eliminazione del blocco con indice passato
- * come parametro sia dalla lista nella HT che
- * dalla lista ordinata.
+ * Questa funzione ha il compito di recuperare il messaggio
+ * all'interno del blocco valido con indice pari a offset.
+ */
+char * read_data_block(uint64_t offset, struct ht_valid_entry *entry)
+{
+
+    struct block *item;
+    char *str;
+    size_t len;
+
+    item = entry->head_list;
+
+    while(item!=NULL)
+    {
+        if(item->block_index == offset)
+            break;
+        
+        item = item ->hash_table_next;
+    }
+
+    if(item == NULL)
+    {
+        printk("%s: [ERRORE GET DATA] Il blocco richiesto %lld è stato invalidato in concorrenza\n", MOD_NAME, offset);
+        return NULL;
+    }
+    
+    len = strlen(item->msg)+1;
+
+    str = (char *)kmalloc(len, GFP_KERNEL);
+
+    if(str==NULL)
+    {
+        printk("%s: [ERRORE GET DATA] Errore esecuzoine malloc() per la copia della stringa blocco %lld\n", MOD_NAME, offset);
+        return NULL;
+    }
+
+    strncpy(str, item->msg, len);
+
+    return str;
+}
+
+
+
+/* E' la versione concorrente della funzione 'insert_free_list' */
+void insert_free_list_conc(struct block_free *item)
+{
+    struct block_free *old_head;
+    int ret;
+
+retry_insert_free_list_conc:
+
+    old_head = head_free_block_list;
+
+    item->next = old_head;
+
+    ret = __sync_bool_compare_and_swap(&(head_free_block_list), old_head, item);
+
+    if(!ret)
+    {
+        goto retry_insert_free_list_conc;
+    }
+
+    printk("%s: [INSERT FREE LIST] L'inserimento in testa del blocco %lld avvenuto con successo\n", MOD_NAME, item->block_index);
+}
+
+
+
+/*
+ * Eliminazione del blocco con indice passato come parametro
+ * sia dalla lista nella HT che dalla lista ordinata.
  */
 struct result_inval * remove_block(uint64_t index)
 {
@@ -156,7 +223,8 @@ struct result_inval * remove_block(uint64_t index)
 
     if(res_inval == NULL)
     {
-        printk("%s: Errore esecuzione kmalloc() nella invalidazione del blocco %lld\n", MOD_NAME, index);
+        printk("%s: [ERRORE INVALIDATE DATA - REMOVE] Errore esecuzione kmalloc() nella invalidazione del blocco %lld\n", MOD_NAME, index);
+
         return NULL;
     }
     
@@ -168,21 +236,26 @@ struct result_inval * remove_block(uint64_t index)
 
     curr = ht_entry->head_list;
 
-    /* Gestione di invalidazioni che sono concorrenti */
+    /* Gestione di invalidazioni */
     if(curr == NULL)
     {
-        printk("%s: [INVALIDAZIONE] La lista #%d nella HT risulta essere vuota\n", MOD_NAME, num_entry_ht);
+        printk("%s: [ERRORE INVALIDATE DATA - REMOVE] La lista #%d nella HT risulta essere vuota\n", MOD_NAME, num_entry_ht);
+
         res_inval->code = 2;
+
         res_inval->block = NULL;
+
         return res_inval;
     }
 
     if(curr->block_index == index)
     {
         ht_entry->head_list = curr->hash_table_next;
+
         asm volatile ("mfence");
 
-        printk("%s: [INVALIDAZIONE] Il blocco %lld richiesto per l'invalidazione è stato eliminato con successo dalla lista nella HT\n", MOD_NAME, index);
+        printk("%s: [INVALIDATE DATA - REMOVE] Il blocco %lld richiesto per l'invalidazione è stato eliminato con successo dalla lista nella HT\n", MOD_NAME, index);
+
         goto remove_sorted_list;
     }
 
@@ -198,23 +271,27 @@ struct result_inval * remove_block(uint64_t index)
     {
         if(curr->block_index == index)
         {
-            printk("%s: [INVALIDAZIONE] Il blocco %lld da invalidare è stato trovato con successo nella lista della HT\n", MOD_NAME, index);
+            printk("%s: [INVALIDATE DATA - REMOVE] Il blocco %lld da invalidare è stato trovato con successo nella lista della HT\n", MOD_NAME, index);
+
             next = curr->hash_table_next;
+
             break;
         }
         prev = curr;
+
         curr = curr->hash_table_next;
     }
 
     if( curr == NULL )
     {
-        printk("%s: [INVALIDAZIONE] Il blocco %lld richiesto per l'invalidazione non è presente nella lista #%d della HT\n", MOD_NAME, index, num_entry_ht);
+        printk("%s: [ERRORE INVALIDATE DATA - REMOVE] Il blocco %lld richiesto per l'invalidazione non è presente nella lista #%d della HT\n", MOD_NAME, index, num_entry_ht);
         res_inval->code = 2;
         res_inval->block = NULL;
         return res_inval;
     }
 
     prev->hash_table_next = next;
+
     asm volatile ("mfence");
 
     printk("%s: [INVALIDAZIONE] Il blocco %lld richiesto per l'invalidazione è stato eliminato con successo dalla lista nella HT\n", MOD_NAME, index);
@@ -227,14 +304,29 @@ remove_sorted_list:
      * essere vuota poiché c'è almeno l'elemento da invalidare.
      */
 
+    if(head_sorted_list == NULL)
+    {
+        printk("%s: [ERRORE INVALIDATE DATA - REMOVE] Errore inconsistenza: il blocco %lld era presente all'interno della lista nella HT ma non nella lista ordinata\n", MOD_NAME, index);
+
+        res_inval->code = 1;
+
+        res_inval->block = NULL;
+
+        return res_inval;
+    }
+
     if( head_sorted_list->block_index == index )
     {
         res_inval->code = 0;
+
         res_inval->block = head_sorted_list;
+
         head_sorted_list = head_sorted_list->sorted_list_next;
+
         asm volatile ("mfence");
 
-        printk("%s: [INVALIDAZIONE] Il blocco %lld richiesto per l'invalidazione è stato eliminato con successo dalla lista ordinata\n", MOD_NAME, index);
+        printk("%s: [INVALIDATE DATA - REMOVE] Il blocco %lld richiesto per l'invalidazione è stato eliminato con successo dalla lista ordinata\n", MOD_NAME, index);
+
         return res_inval;
     }
 
@@ -248,30 +340,38 @@ remove_sorted_list:
     {
         if(curr->block_index == index)
         {
-            printk("%s: [INVALIDAZIONE] Il blocco %lld da invalidare è stato trovato con successo nella lista ordinata\n", MOD_NAME, index);
+            printk("%s: [INVALIDATE DATA - REMOVE] Il blocco %lld da invalidare è stato trovato con successo nella lista ordinata\n", MOD_NAME, index);
+
             next = curr->sorted_list_next;
+
             break;
         }
 
         prev = curr;
+
         curr = curr->sorted_list_next;
     }
 
     if(curr == NULL)
     {
-        printk("%s: [ERRORE] Errore inconsistenza: il blocco %lld era presente all'interno della lista nella HT ma non nella lista ordinata\n", MOD_NAME, index);
+        printk("%s: [ERRORE INVALIDATE DATA - REMOVE] Errore inconsistenza: il blocco %lld era presente all'interno della lista nella HT ma non nella lista ordinata\n", MOD_NAME, index);
+
         res_inval->code = 1;
+
         res_inval->block = NULL;
+
         return res_inval;
     }
 
     res_inval->code = 0;
+
     res_inval->block = curr;
 
-    prev->sorted_list_next = next;  
+    prev->sorted_list_next = next;
+ 
     asm volatile ("mfence");  
 
-    printk("%s: [INVALIDAZIONE] Il blocco %lld richiesto per l'invalidazione è stato eliminato con successo dalla lista ordinata\n", MOD_NAME, index);
+    printk("%s: [INVALIDATE DATA - REMOVE] Il blocco %lld richiesto per l'invalidazione è stato eliminato con successo dalla lista ordinata\n", MOD_NAME, index);
     
     return res_inval;
 }
@@ -282,21 +382,22 @@ remove_sorted_list:
  * Questa funzione esegue l'invalidazione del blocco il cui
  * indice è passato come parametro.
  */
-
 int invalidate_block(uint64_t index)
 {
 
     int n ;
     int index_ht;
     int index_sorted;
+    uint64_t num_insert;
+    uint64_t free_index_block;
     unsigned long updated_epoch_ht;
     unsigned long updated_epoch_sorted;
     unsigned long last_epoch_ht;
     unsigned long last_epoch_sorted;
     unsigned long grace_period_threads_ht;
     unsigned long grace_period_threads_sorted;
-    uint64_t num_insert;
     struct result_inval *res_inval;
+    struct block_free *bf;
 
 
     n = 0;
@@ -309,11 +410,17 @@ int invalidate_block(uint64_t index)
      * invalidazione e si procede con la rimozione del blocco. 
      */
 
+    /* Prendo il mutex per eseguire il processo di invalidazione */
+    mutex_lock(&invalidate_mutex);
+
 retry_invalidate:
 
     if(n > 20)
     {
-        printk("%s: [ERRORE] Il numero massimo di tentativi per l'invalidazione del blocco %lld è stato raggiunto\n", MOD_NAME, index);
+        printk("%s: [ERRORE INVALIDATE DATA] Il numero massimo di tentativi per l'invalidazione del blocco %lld è stato raggiunto\n", MOD_NAME, index);
+
+        mutex_unlock(&invalidate_mutex);
+
         return 1;
     }
 
@@ -323,27 +430,36 @@ retry_invalidate:
     /* Recupero il numero di inserimenti in corso */
     num_insert = sync_var & MASK_NUMINSERT;
 
-    printk("%s: Il numero di inserimenti attualmente in corso è pari a %lld\n", MOD_NAME, num_insert);
+    printk("%s: [INVALIDATE DATA] Il numero di inserimenti attualmente in corso è pari a %lld\n", MOD_NAME, num_insert);
 
-    if(num_insert > 0 || sync_var)
+    if(num_insert > 0)
     {
         mutex_unlock(&inval_insert_mutex);
 
-        printk("%s: L'invalidazione del blocco %lld non è stata effettuata al tentativo #%d\n", MOD_NAME, index, n);
+        printk("%s: [ERRORE INVALIDATE DATA] L'invalidazione del blocco %lld non è stata effettuata al tentativo #%d\n", MOD_NAME, index, n);
 
-        printk("%s: Il thread per l'invalidazione del blocco %lld viene messo in attesa\n", MOD_NAME, index);
+        printk("%s: [ERRORE INVALIDATE DATA] Il thread per l'invalidazione del blocco %lld viene messo in attesa\n", MOD_NAME, index);
 
         wait_event_interruptible(the_queue, (sync_var & MASK_NUMINSERT) == 0);
 
         n++;
 
-        printk("%s: Nuovo tentativo #%d di invalidazione del blocco %lld\n", MOD_NAME, n, index);
+        printk("%s: [ERRORE INVALIDATE DATA] Nuovo tentativo #%d di invalidazione del blocco %lld\n", MOD_NAME, n, index);
 
         goto retry_invalidate;
     }
 
+    if(sync_var)
+    {
+        printk("%s: [ERRORE INVALIDATE DATA] Problema di incosistenza: invalidazione e inserimento paralleli\n", MOD_NAME);
+
+        mutex_unlock(&invalidate_mutex);
+
+        return 1;
+    }
+
     /* Comunico l'inizio del processo di invalidazione */
-    sync_var |= 0X8000000000000000;
+    __atomic_exchange_n (&(sync_var), 0X8000000000000000, __ATOMIC_SEQ_CST);
 
     mutex_unlock(&inval_insert_mutex);
 
@@ -351,16 +467,27 @@ retry_invalidate:
      * Durante il processo di invalidazione non è possibile
      * avere in concorrenza l'inserimento di un nuovo blocco.
      */
-
     res_inval = remove_block(index);
 
-    if( (res_inval == NULL) || (res_inval->code == 1) )
+    if( res_inval == NULL )
     {
+        __atomic_exchange_n (&(sync_var), 0X0000000000000000, __ATOMIC_SEQ_CST);
+
+        mutex_unlock(&invalidate_mutex);
+
+        wake_up_interruptible(&the_queue);
+
         return 1;
     }
 
     if(res_inval->code == 2)
     {
+        __atomic_exchange_n (&(sync_var), 0X0000000000000000, __ATOMIC_SEQ_CST);
+
+        mutex_unlock(&invalidate_mutex);
+
+        wake_up_interruptible(&the_queue);
+
         return 0;
     }
 
@@ -381,16 +508,18 @@ retry_invalidate:
     grace_period_threads_ht = last_epoch_ht & (~MASK);
     grace_period_threads_sorted = last_epoch_sorted & (~MASK);
 
-    printk("%s: [INVALIDAZIONE] Attesa della terminazione del grace period HT: #threads %ld\n", MOD_NAME, grace_period_threads_ht);
-    printk("%s: [INVALIDAZIONE] Attesa della terminazione del grace period lista ordinata: #threads %ld\n", MOD_NAME, grace_period_threads_sorted);
+    printk("%s: [INVALIDATE DATA] Attesa della terminazione del grace period HT: #threads %ld\n", MOD_NAME, grace_period_threads_ht);
+    printk("%s: [INVALIDATE DATA] Attesa della terminazione del grace period lista ordinata: #threads %ld\n", MOD_NAME, grace_period_threads_sorted);
 
 sleep_again:
 
     wait_event_interruptible(the_queue, (gp->standing_ht[index_ht] >= grace_period_threads_ht) && (gp->standing_sorted[index_sorted] >= grace_period_threads_sorted));
 
-    if((gp->standing_ht[index_ht] >= grace_period_threads_ht) && (gp->standing_sorted[index_sorted] >= grace_period_threads_sorted))
+    printk("%s: gp->standing_ht[index_ht] = %ld\tgrace_period_threads_ht = %ld\ngp->standing_sorted[index_sorted] = %ld\tgrace_period_threads_sorted = %ld\n", MOD_NAME, gp->standing_ht[index_ht], grace_period_threads_ht, gp->standing_sorted[index_sorted], grace_period_threads_sorted);
+
+    if((gp->standing_ht[index_ht] < grace_period_threads_ht) || (gp->standing_sorted[index_sorted] < grace_period_threads_sorted))
     {
-        printk("%s: [ERRORE] Il thread va nuovamente a dormire per il blocco %lld\n", MOD_NAME, index);
+        printk("%s: [ERRORE INVALIDATE DATA] Il thread invalidate va nuovamente a dormire per l'invalidazione del blocco %lld\n", MOD_NAME, index);
         goto sleep_again;
     }
 
@@ -398,14 +527,40 @@ sleep_again:
 
     gp->standing_ht[index_ht] = 0;
 
-    if(res_inval->block)
+    if(res_inval->block != NULL)
     {
-        printk("%s: [INVALIDAZIONE] Deallocazione del blocco %lld eliminato con successo\n", MOD_NAME, index);
+        free_index_block = res_inval->block->block_index;
+
         kfree(res_inval->block);
+
+        printk("%s: [INVALIDATE DATA] Deallocazione del blocco %lld eliminato con successo\n", MOD_NAME, index);
     }
 
-    //TODO: Metti a zero il bit della variabile di controllo sync_var
+    /* Inserisco l'indice del blocco nella lista dei blocchi liberi */
+    bf = (struct block_free *)kmalloc(sizeof(struct block_free), GFP_KERNEL);
+
+    if(bf == NULL)
+    {
+        printk("%s: [ERRORE INVALIDATE DATA] Errore esecuzione kmalloc() a seguito della rimozione\n", MOD_NAME);
+
+        mutex_unlock(&invalidate_mutex);
+
+        return 1;
+    }
+
+    
+    bf->block_index = free_index_block;
+
+    bf->next = NULL;
+
+    insert_free_list_conc(bf);
+
     __atomic_exchange_n (&(sync_var), 0X0000000000000000, __ATOMIC_SEQ_CST);
+
+    /* Rilascio il mutex per permettere successive invalidazioni */
+    mutex_unlock(&invalidate_mutex);
+
+    wake_up_interruptible(&the_queue);
 
     return 0;
 }
@@ -775,32 +930,6 @@ retry:
 
 
 
-/* E' la versione concorrente della funzione 'insert_free_list' */
-void insert_free_list_conc(struct block_free *item)
-{
-    struct block_free *old_head;
-    int ret;
-
-retry_insert_free_list_conc:
-
-    old_head = head_free_block_list;
-
-    item->next = old_head;
-
-    ret = __sync_bool_compare_and_swap(&(head_free_block_list), old_head, item);
-
-    if(!ret)
-    {
-        goto retry_insert_free_list_conc;
-    }
-
-    printk("%s: [INSERT FREE LIST] L'inserimento in testa del blocco %lld avvenuto con successo\n", MOD_NAME, item->block_index);
-}
-
-
-
-
-
 /*
  * Inserisce un nuovo elemento all'interno della lista free_block_list.
  * L'inserimento viene fatto in testa poiché non mi importa mantenere
@@ -1098,7 +1227,7 @@ void check_rollback(uint64_t index, struct ht_valid_entry * ht_entry)
 
 
 /*
- * Esegue la procedura di rollback per l'inserimento di un
+ * Esegue la procedura di rollback relativa all'inserimento di un
  * nuovo blocco. Più precisamente, rimuove il blocco dalla
  * lista corrispondente nella hash table.
  */
@@ -1330,7 +1459,7 @@ retry_insert_ht:
         return 1;        
     }
 
-    __sync_fetch_and_sub(&sync_var,1);                  /* Segnalo che l'operazione di inserimento si è conclusa con successo. */
+    __sync_fetch_and_sub(&sync_var,1);                  /* Segnalo che l'operazione di inserimento si è conclusa */
 
     wake_up_interruptible(&the_queue);
 

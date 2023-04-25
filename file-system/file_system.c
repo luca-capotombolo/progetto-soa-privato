@@ -393,7 +393,9 @@ int house_keeper(void *arg)
 
 sleep_kt:
 
-    msleep(PERIOD);
+    msleep(PERIOD * 1000);
+
+    mutex_lock(&invalidate_mutex);
 
 retry_house_keeper:
 
@@ -403,7 +405,7 @@ retry_house_keeper:
     /* Recupero il numero di inserimenti in corso */
     num_insert = sync_var & MASK_NUMINSERT;
 
-    printk("%s: Il numero di inserimenti attualmente in corso è pari a %lld\n", MOD_NAME, num_insert);
+    printk("%s: [HOUSE KEEPER] Il numero di inserimenti attualmente in corso è pari a %lld\n", MOD_NAME, num_insert);
 
     /*
      * Verifico se esistono degli inserimenti o un'invalidazione
@@ -412,21 +414,32 @@ retry_house_keeper:
      * Se esiste un'invalidazione, allora la sync_var è differente da
      * zero.
      */
-    if(num_insert > 0 || sync_var)
+    if(num_insert > 0)
     {
         mutex_unlock(&inval_insert_mutex);
 
-        printk("%s: Il thread demone viene messo in attesa\n", MOD_NAME);
+        printk("%s: [ERRORE HOUSE KEEPER] Il thread demone viene messo in attesa\n", MOD_NAME);
 
         wait_event_interruptible(the_queue, (sync_var & MASK_NUMINSERT) == 0);
 
-        printk("%s: Il thread demone riprende l'esecuzione\n", MOD_NAME);
+        printk("%s: [ERRORE HOUSE KEEPER] Il thread demone riprende l'esecuzione\n", MOD_NAME);
+
+        goto retry_house_keeper;
+    }
+
+    if(sync_var)
+    {
+        printk("%s: [ERRORE HOUSE KEEPER] Problemi di inconsistenza: invalidazione e inserimento paralleli\n", MOD_NAME);
+
+        mutex_unlock(&inval_insert_mutex);
+
+        mutex_unlock(&invalidate_mutex);
 
         goto retry_house_keeper;
     }
 
     /* Comunico l'inizio del processo di azzeramento del contatore */
-    sync_var |= 0X8000000000000000;
+    __atomic_exchange_n (&(sync_var), 0X8000000000000000, __ATOMIC_SEQ_CST);
 
     mutex_unlock(&inval_insert_mutex);
 
@@ -458,9 +471,11 @@ sleep_again:
 
     wait_event_interruptible(the_queue, (gp->standing_ht[index_ht] >= grace_period_threads_ht) && (gp->standing_sorted[index_sorted] >= grace_period_threads_sorted));
 
-    if((gp->standing_ht[index_ht] >= grace_period_threads_ht) && (gp->standing_sorted[index_sorted] >= grace_period_threads_sorted))
+    printk("%s: gp->standing_ht[index_ht] = %ld\tgrace_period_threads_ht = %ld\tgp->standing_sorted[index_sorted] = %ld\tgrace_period_threads_sorted = %ld\n", MOD_NAME, gp->standing_ht[index_ht], grace_period_threads_ht, gp->standing_sorted[index_sorted], grace_period_threads_sorted);
+
+    if((gp->standing_ht[index_ht] < grace_period_threads_ht) || (gp->standing_sorted[index_sorted] < grace_period_threads_sorted))
     {
-        printk("%s: [ERRORE] Il thread demone va nuovamente a dormire\n", MOD_NAME);
+        printk("%s: [ERRORE HOUSE KEEPER] Il thread demone va nuovamente a dormire\n", MOD_NAME);
         goto sleep_again;
     }
 
@@ -468,8 +483,13 @@ sleep_again:
 
     gp->standing_ht[index_ht] = 0;
 
-    //TODO: Metti a zero il bit della variabile di controllo sync_var
     __atomic_exchange_n (&(sync_var), 0X0000000000000000, __ATOMIC_SEQ_CST);
+
+    mutex_unlock(&invalidate_mutex);
+
+    wake_up_interruptible(&the_queue);
+
+    printk("%s: [HOUSE KEEPER] Ritorno a dormire...\n", MOD_NAME);
 
     goto sleep_kt;
     

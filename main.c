@@ -33,9 +33,6 @@ int restore[HACKED_ENTRIES] = {[0 ... (HACKED_ENTRIES-1)] -1};
  */
 static DEFINE_MUTEX(free_list_mutex);
 
-/* Questo mutex mi consente di avere una sola invalidazione alla volta */
-static DEFINE_MUTEX(invalidate_mutex);
-
 
 
 static int check_offset(int offset, struct soafs_sb_info *sbi)
@@ -69,43 +66,6 @@ static int check_size(size_t size)
 
 
 
-char * read_data_block(uint64_t offset, struct ht_valid_entry *entry)
-{
-
-    struct block *item;
-    char *str;
-    size_t len;
-
-    item = entry->head_list;
-
-    while(item!=NULL)
-    {
-        if(item->block_index == offset)
-            break;
-        
-        item = item ->hash_table_next;
-    }
-
-    if(item == NULL)
-        return NULL;
-    
-    len = strlen(item->msg)+1;
-
-    str = (char *)kmalloc(len, GFP_KERNEL);
-
-    if(str==NULL)
-    {
-        printk("%s: Errore malloc() copia stringa\n", MOD_NAME);
-        return NULL;
-    }
-
-    strncpy(str, item->msg, len);
-
-    return str;
-}
-
-
-
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
 __SYSCALL_DEFINEx(3, _get_data, uint64_t, offset, char *, destination, size_t, size){
 #else
@@ -121,7 +81,6 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
     size_t byte_copy;                                           /* Il numero di byte che verranno restituiti all'utente */
     char *msg_block;                                            /* Il messaggio contenuto all'interno del blocco del device */   
     unsigned long my_epoch;
-    unsigned long * epoch;
     int index;
     
     LOG_SYSTEM_CALL("GET_DATA", "get_data");
@@ -147,16 +106,19 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
 
     entry = &(hash_table_valid[i]);
 
-    epoch = &(gp->epoch_ht);
-
-    my_epoch = __sync_fetch_and_add(epoch,1);
+    my_epoch = __sync_fetch_and_add(&(gp->epoch_ht),1);
 
     /* Verifico se il blocco richiesto è valido */
     if(!check_bit(offset))
     {
-        printk("%s: [GET DATA] E' stata richiesta la lettura del blocco %lld ma il blocco non è valido\n", MOD_NAME, offset);
+        printk("%s: [ERRORE GET DATA] E' stata richiesta la lettura del blocco %lld ma il blocco non è valido\n", MOD_NAME, offset);
+
         index = (my_epoch & MASK) ? 1 : 0;
+
         __sync_fetch_and_add(&(gp->standing_ht[index]),1);
+
+        wake_up_interruptible(&the_queue);
+
         return -ENODATA;
     }
 
@@ -164,11 +126,13 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
 
 	index = (my_epoch & MASK) ? 1 : 0;
 
-	__sync_fetch_and_add(&(gp->standing_ht[index]),1);    
+	__sync_fetch_and_add(&(gp->standing_ht[index]),1);
+
+    wake_up_interruptible(&the_queue);  
 
     if(msg_block == NULL)
     {
-        printk("%s: [GET DATA] E' stata richiesta la lettura del blocco %lld ma è stato invalidato\n", MOD_NAME, offset);
+        printk("%s: [ERRORE GET DATA] La lettura del blocco %lld è terminata con insuccesso\n", MOD_NAME, offset);
         return -ENODATA;
     }
 
@@ -178,9 +142,9 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
     {
         /*
         * Se la quantità di dati che mi stai chiedendo
-        * è strettamente maggiore della dimensione massima
-        * di un messaggio che può essere memorizzato, allora
-        * ti restituisco l'intero contenuto del blocco. Il
+        * è strettamente maggiore della dimensione del
+        * messaggio che deve essere restituit, allora ti
+        * restituisco l'intero contenuto del messaggio. Il
         * terminatore di stringa è già presente nel blocco.
         */
         byte_copy = available_data;
@@ -191,17 +155,10 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
          * Altrimenti, ti restituisco la quantità di byte che
          * mi chiedi. Metto il terminatore di stringa poiché
          * il messaggio contenuto nel blocco potrebbe essere
-         * più lungo della dimensione 'size' richiesta. Sono
-         * le mie system call che si fanno carico della gestione
-         * corretta del terminatore di stringa.
+         * più lungo della dimensione 'size' richiesta.
          */
         byte_copy = size;
 
-        /*
-         * Se possibile, cerco di evitare l'operazione di scrittura.
-         * Per come vengono scritti i messaggi all'interno del blocco,
-         * il terminatore di stringa è già presente.
-         */
         if(size < available_data)
         {
             msg_block[byte_copy-1] = '\0';
@@ -209,9 +166,11 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
       
     }    
 
-    printk("%s: [GET DATA] Numero di bytes che verranno effettivamente restituiti è %ld\n", MOD_NAME, byte_copy);
+    //printk("%s: [GET DATA] Numero di bytes che verranno effettivamente restituiti è %ld\n", MOD_NAME, byte_copy);
     
     byte_ret = copy_to_user(destination, msg_block, byte_copy);
+
+    printk("%s: [GET DATA] Il messaggio del blocco %lld è stato consegnato con successo\n", MOD_NAME, offset);
     
     return (byte_copy - byte_ret);
 	
@@ -442,7 +401,6 @@ retry:
 
 
 
-//TODO: Implementa la system call
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
 __SYSCALL_DEFINEx(1, _invalidate_data, uint64_t, offset){
 #else
@@ -477,27 +435,20 @@ asmlinkage int sys_invalidate_data(uint64_t offset){
      */
     if(!check_bit(offset))
     {
-        printk("%s: [INVALIDATE DATA] E' stata richiesta l'invalidazione del blocco %lld ma il blocco non è valido\n", MOD_NAME, offset);
+        printk("%s: [ERRORE INVALIDATE DATA] E' stata richiesta l'invalidazione del blocco %lld ma il blocco non è valido\n", MOD_NAME, offset);
         return -ENODATA;
     }
 
-    /* Prendo il mutex per eseguire il processo di invalidazione */
-    mutex_lock(&invalidate_mutex);
-
     /* Eseguo l'invalidazione del blocco richiesto */
-    ret = invalidate_block(offset);   
+    ret = invalidate_block(offset);
 
     if(ret)
     {
-        printk("%s: [ERRORE INVALIDATE DATA] L'invalidazione del blocco %lld non è stata eseguita con successo\n", MOD_NAME, offset);
-        mutex_unlock(&invalidate_mutex);
+        printk("%s: [ERRORE INVALIDATE DATA] L'invalidazione del blocco %lld non è stata eseguita con successo\n", MOD_NAME, offset);        
         return -ENODATA;
     }
 
     printk("%s: [INVALIDATE DATA] L'invalidazione del blocco %lld è stata eseguita con successo\n", MOD_NAME, offset);
-
-    /* Rilascio il mutex per permettere successive invalidazioni */
-    mutex_unlock(&invalidate_mutex);
 
     return 0;
 	

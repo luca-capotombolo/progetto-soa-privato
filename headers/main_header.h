@@ -19,7 +19,7 @@
 #define LICENSE "GPL"
 
 /* Periodo per il kernel thread */
-#define PERIOD 10000000
+#define PERIOD 30
 
 /* Maschera per recuperare il valore dell'epoca */
 #define MASK 0X8000000000000000
@@ -74,6 +74,9 @@ extern uint64_t sync_var;
 static DEFINE_MUTEX(inval_insert_mutex);
 
 static DECLARE_WAIT_QUEUE_HEAD(the_queue);
+
+/* Questo mutex mi consente di avere una sola invalidazione alla volta */
+static DEFINE_MUTEX(invalidate_mutex);
                                                 
 
 #endif

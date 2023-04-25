@@ -78,5 +78,6 @@ extern void set_bitmask(uint64_t index, int mode);
 extern int get_bitmask_block(void);
 extern int insert_hash_table_valid_and_sorted_list_conc(char *data_block_msg, uint64_t pos, uint64_t index, struct block_free *bf);
 extern int invalidate_block(uint64_t index);
+extern char * read_data_block(uint64_t offset, struct ht_valid_entry *entry);
 
 #endif //data_structure_core.h
