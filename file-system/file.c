@@ -16,7 +16,6 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
     unsigned long ret;
     //grace period
     unsigned long my_epoch;
-    unsigned long * epoch;
     int index;
     
     printk("%s: E' stata invocata la funzione di lettura con la dimensione richiesta pari a %ld.", MOD_NAME, len);
@@ -26,17 +25,20 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
         return 0;
     }
 
-    //TODO: Includilo nel grace period
-
-    epoch = &(gp->epoch_sorted);
-
-    my_epoch = __sync_fetch_and_add(epoch,1);
+    my_epoch = __sync_fetch_and_add(&(gp->epoch_sorted),1);
 
     curr = head_sorted_list;
 
     if(curr == NULL)
     {
         printk("%s: Attualmente non ci sono messaggi da consegnare\n", MOD_NAME);
+
+        index = (my_epoch & MASK) ? 1 : 0;
+
+        __sync_fetch_and_add(&(gp->standing_sorted[index]),1);
+
+        wake_up_interruptible(&the_queue);
+
         return 0;
     }
 
@@ -47,7 +49,13 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
     if(msg_to_copy == NULL)
     {
         printk("%s: Errore esecuzione kzalloc() durante l'esecuzione della read()\n", MOD_NAME);
-        // TODO: terminazione grace period
+
+        index = (my_epoch & MASK) ? 1 : 0;
+
+        __sync_fetch_and_add(&(gp->standing_sorted[index]),1);
+
+        wake_up_interruptible(&the_queue);
+
         return -EIO;
     }
 
@@ -57,6 +65,13 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
         if(bytes_copied > len)
         {
             printk("%s: [ERRORE] Quantità di byte copiati non valida\n", MOD_NAME);
+
+            index = (my_epoch & MASK) ? 1 : 0;
+
+            __sync_fetch_and_add(&(gp->standing_sorted[index]),1);
+
+            wake_up_interruptible(&the_queue);
+
             return -EIO;
         }  
 
@@ -111,13 +126,14 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
         printk("%s: Il contenuto del device è stato letto completamente con successo\n", MOD_NAME);
     }
 
-    //TODO: Fine del grace period
-
     index = (my_epoch & MASK) ? 1 : 0;
 
     __sync_fetch_and_add(&(gp->standing_sorted[index]),1);
 
+    wake_up_interruptible(&the_queue);
+
     printk("%s: Dimensione del messaggio da consegnare all'utente è pari a %ld\n", MOD_NAME, strlen(msg_to_copy) + 1);
+
     printk("%s Numero di bytes che sono stati letti dal device è pari a %ld\n", MOD_NAME, bytes_copied);
 
     if(bytes_copied > 0)

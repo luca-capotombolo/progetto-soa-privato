@@ -453,6 +453,8 @@ retry_invalidate:
     {
         printk("%s: [ERRORE INVALIDATE DATA] Problema di incosistenza: invalidazione e inserimento paralleli\n", MOD_NAME);
 
+        mutex_unlock(&inval_insert_mutex);
+
         mutex_unlock(&invalidate_mutex);
 
         return 1;
@@ -543,7 +545,11 @@ sleep_again:
     {
         printk("%s: [ERRORE INVALIDATE DATA] Errore esecuzione kmalloc() a seguito della rimozione\n", MOD_NAME);
 
+        __atomic_exchange_n (&(sync_var), 0X0000000000000000, __ATOMIC_SEQ_CST);
+
         mutex_unlock(&invalidate_mutex);
+
+        wake_up_interruptible(&the_queue);
 
         return 1;
     }
@@ -1216,12 +1222,12 @@ void check_rollback(uint64_t index, struct ht_valid_entry * ht_entry)
     {
         if(curr->block_index == index)
         {
-            printk("%s: [ERRORE] La procedura di rollback non è stata eseguita con successo per il blocco con indice %lld\n", MOD_NAME, index);
+            printk("%s: [ERRORE CHECK ROLLBACK] La procedura di rollback non è stata eseguita con successo per il blocco con indice %lld\n", MOD_NAME, index);
         }
         curr = curr->hash_table_next;
     }
 
-    printk("%s: [CHECK] La procedura di rollback è stata eseguita con successo per il blocco con indice %lld\n", MOD_NAME, index);
+    printk("%s: [CHECK ROLLBACK] La procedura di rollback è stata eseguita con successo per il blocco con indice %lld\n", MOD_NAME, index);
 }
 
 
@@ -1260,7 +1266,7 @@ static void rollback(uint64_t index, struct ht_valid_entry * ht_entry)
 
     if(curr->block_index == index)
     {
-        ret = __sync_bool_compare_and_swap(&(ht_entry->head_list), curr, curr->hash_table_next);
+        ret = __sync_bool_compare_and_swap(&(ht_entry->head_list), curr, (ht_entry->head_list)->hash_table_next);
 
         if(!ret)
         {
