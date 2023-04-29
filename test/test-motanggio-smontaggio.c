@@ -78,16 +78,25 @@ int main(void)
 
     memset(msg,0,4096);
 
-    //get_data(msg, 4096, 0);
+    get_data(msg, 4096, 0);
 
-    //offset = put_data("Prima scrittura.");
+    offset = put_data("Prima scrittura.");
 
-    //memset(msg, 0, 4096);
+    memset(msg, 0, 4096);
 
-    //get_data(msg, 4096, offset);
-
+    get_data(msg, 4096, offset);
+/*
     invalidate_data(2);
-
+    invalidate_data(3);
+    invalidate_data(4);
+    invalidate_data(5);
+    invalidate_data(7);
+    invalidate_data(3);
+    invalidate_data(9);
+    invalidate_data(13);
+    invalidate_data(15);
+    invalidate_data(16);
+*/
     return 0;
 
     

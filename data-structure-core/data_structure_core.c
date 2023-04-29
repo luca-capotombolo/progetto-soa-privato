@@ -561,6 +561,8 @@ sleep_again:
 
     insert_free_list_conc(bf);
 
+    set_bitmask(index,0);
+
     __atomic_exchange_n (&(sync_var), 0X0000000000000000, __ATOMIC_SEQ_CST);
 
     /* Rilascio il mutex per permettere successive invalidazioni */
@@ -1066,17 +1068,19 @@ void set_bitmask(uint64_t index, int mode)
 
     /* Determino l'offset nella entry dell'array */
     offset = index % bits;
+    
+    base = 1;
 
     if(mode)
     {
-        base = 1;
         bitmask[bitmask_entry][array_entry] |= (base << offset);
     }
     else
     {
-        base = 0;
-        bitmask[bitmask_entry][array_entry] &= (base << offset);
+        bitmask[bitmask_entry][array_entry] ^= (base << offset);
     }
+
+    asm volatile("mfence");
     
 
 }
