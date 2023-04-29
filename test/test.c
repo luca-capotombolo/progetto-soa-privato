@@ -79,6 +79,8 @@ uint64_t put_data(const char *msg)
 
     printf("[PUT DATA] Valore di ritorno della system call: %ld\n", ret);
     printf("[PUT DATA] Il messaggio inserito nel blocco %ld è: %s\n", ret, msg);
+
+    return ret;
 }
 
 

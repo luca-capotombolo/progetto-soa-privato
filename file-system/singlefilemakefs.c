@@ -73,7 +73,7 @@ int main(int argc, char *argv[])
      */
     if(update_list_size > SIZE_INIT)
     {
-        printf("La dimensione richiesta %ld è maggiore della dimensione massima dell'array %d\n", actual_size, SIZE_INIT);
+        printf("La dimensione richiesta %ld è maggiore della dimensione massima dell'array %d\n", update_list_size, SIZE_INIT);
         printf("Il valore di update_list_size > SIZE_INIT\n");
         return -1;
     }
@@ -165,7 +165,7 @@ int main(int argc, char *argv[])
      * In questa versione, tutti i blocchi sono
      * inizialmente liberi.
      */
-    for(int k=0; k<actual_size; k++)
+    for(uint64_t k=0; k<actual_size; k++)
     {
         sb.index_free[k] = k;
     }

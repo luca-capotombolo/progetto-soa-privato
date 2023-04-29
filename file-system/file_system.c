@@ -16,6 +16,7 @@
 
 int is_mounted = 0;                                             /* Inizialmente non ho alcun montaggio. */
 struct super_block *sb_global = NULL;                           /* Riferimento al superblocco. */
+int is_free = 0;
 
 
 static struct super_operations soafs_super_ops = {
@@ -664,8 +665,9 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     {
         printk("%s: [ERRORE MONTAGGIO] Errore nella creazione del thread demone\n", MOD_NAME);
         brelse(bh);
-        kfree(sbi);
         free_all_memory();
+        kfree(sbi);
+        is_free = 1;
         return -EIO;        
     }
 
@@ -686,6 +688,12 @@ static void soafs_kill_sb(struct super_block *sb)
     n = 0;
 
     printk("%s: [SMONTAGGIO] Inizio smontaggio del FS...", MOD_NAME);
+
+    if(is_free)
+    {
+        printk("%s: [ERRORE SMONTAGGIO] Le strutture dati sono state già deallocate e il FS non è stato utilizzato\n", MOD_NAME);
+        goto exit_kill_sb;
+    }
 
 retry_flush_bitmask:
 
@@ -726,11 +734,15 @@ retry_umount:
 
     free_all_memory();
 
+exit_kill_sb:
+
     kill_block_super(sb);
 
-    printk("%s: [SMONTAGGIO] Il File System 'soafs' è stato smontato con successo.\n", MOD_NAME);
-
     is_mounted = 0;
+
+    is_free = 0;
+
+    printk("%s: [SMONTAGGIO] Il File System 'soafs' è stato smontato con successo.\n", MOD_NAME);
 }
 
 

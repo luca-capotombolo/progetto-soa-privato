@@ -5,9 +5,10 @@ my_module-objs += main.o ./file-system/file.o ./file-system/dir.o ./file-system/
 A = $(shell cat /sys/module/the_usctm/parameters/sys_call_table_address)
 
 # Numero totale dei blocchi esclusi i blocchi di stato
-NBLOCKS_FS = 12
+NBLOCKS_FS = 150002
 
 UPDATE_LIST_SIZE = 8
+
 ACTUAL_SIZE = 8
 
 all:

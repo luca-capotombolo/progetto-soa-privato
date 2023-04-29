@@ -666,6 +666,8 @@ int init_bitmask(void)
 
     printk("%s: [INIZIALIZZAZIONE CORE - BITMASK] Inizializzazione bitmask completata con successo.\n", MOD_NAME);
 
+    asm volatile("mfence");
+
     return 0;
     
 }
