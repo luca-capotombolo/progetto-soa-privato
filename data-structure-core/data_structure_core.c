@@ -140,7 +140,7 @@ void compute_num_rows(uint64_t num_data_block) //
 
 /*
  * Questa funzione ha il compito di recuperare il messaggio
- * all'interno del blocco valido con indice pari a offset.
+ * all'interno del blocco con indice pari a offset.
  */
 char * read_data_block(uint64_t offset, struct ht_valid_entry *entry)
 {
@@ -538,6 +538,8 @@ sleep_again:
         printk("%s: [INVALIDATE DATA] Deallocazione del blocco %lld eliminato con successo\n", MOD_NAME, index);
     }
 
+retry_kmalloc_invalidate_block:
+
     /* Inserisco l'indice del blocco nella lista dei blocchi liberi */
     bf = (struct block_free *)kmalloc(sizeof(struct block_free), GFP_KERNEL);
 
@@ -545,13 +547,7 @@ sleep_again:
     {
         printk("%s: [ERRORE INVALIDATE DATA] Errore esecuzione kmalloc() a seguito della rimozione\n", MOD_NAME);
 
-        __atomic_exchange_n (&(sync_var), 0X0000000000000000, __ATOMIC_SEQ_CST);
-
-        mutex_unlock(&invalidate_mutex);
-
-        wake_up_interruptible(&the_queue);
-
-        return 1;
+        goto retry_kmalloc_invalidate_block;
     }
 
     
@@ -909,6 +905,8 @@ retry:
 
             num_block_free_used++;
 
+            asm volatile ("mfence");
+
             count --;
 
             /*
@@ -1048,6 +1046,7 @@ int init_free_block_list(uint64_t *index_free, uint64_t actual_size) //
 void set_bitmask(uint64_t index, int mode)
 {
     uint64_t base;
+    uint64_t shift_base;
     uint64_t offset;
     int bitmask_entry;
     int array_entry;
@@ -1071,17 +1070,18 @@ void set_bitmask(uint64_t index, int mode)
     
     base = 1;
 
+    shift_base = base << offset;
+
     if(mode)
     {
-        bitmask[bitmask_entry][array_entry] |= (base << offset);
+        __sync_fetch_and_or(&(bitmask[bitmask_entry][array_entry]), shift_base);
+        //bitmask[bitmask_entry][array_entry] |= (base << offset);
     }
     else
     {
-        bitmask[bitmask_entry][array_entry] ^= (base << offset);
-    }
-
-    asm volatile("mfence");
-    
+        __sync_fetch_and_xor(&(bitmask[bitmask_entry][array_entry]), shift_base);
+        //bitmask[bitmask_entry][array_entry] ^= (base << offset);
+    }   
 
 }
 

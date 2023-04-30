@@ -18,7 +18,7 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
     unsigned long my_epoch;
     int index;
     
-    printk("%s: E' stata invocata la funzione di lettura con la dimensione richiesta pari a %ld.", MOD_NAME, len);
+    printk("%s: [READ DRIVER] E' stata invocata la funzione di lettura con la dimensione richiesta pari a %ld.", MOD_NAME, len);
 
     if(*off)
     {
@@ -31,7 +31,7 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
 
     if(curr == NULL)
     {
-        printk("%s: Attualmente non ci sono messaggi da consegnare\n", MOD_NAME);
+        printk("%s: [READ DRIVER] Attualmente non ci sono messaggi da consegnare\n", MOD_NAME);
 
         index = (my_epoch & MASK) ? 1 : 0;
 
@@ -48,7 +48,7 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
 
     if(msg_to_copy == NULL)
     {
-        printk("%s: Errore esecuzione kzalloc() durante l'esecuzione della read()\n", MOD_NAME);
+        printk("%s: [ERRORE READ DRIVER] Errore esecuzione kzalloc() durante l'esecuzione della read()\n", MOD_NAME);
 
         index = (my_epoch & MASK) ? 1 : 0;
 
@@ -64,7 +64,7 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
 
         if(bytes_copied > len)
         {
-            printk("%s: [ERRORE] Quantità di byte copiati non valida\n", MOD_NAME);
+            printk("%s: [ERRORE READ DRIVER] Quantità di byte copiati non valida\n", MOD_NAME);
 
             index = (my_epoch & MASK) ? 1 : 0;
 
@@ -72,13 +72,15 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
 
             wake_up_interruptible(&the_queue);
 
+            kfree(msg_to_copy);
+
             return -EIO;
         }  
 
         if(bytes_copied == len)
         {
             /* La quantità di richiesta dall'utente è stata copiata con successo */
-            printk("%s: Il contenuto del device richiesto è stato letto con successo\n", MOD_NAME);
+            printk("%s: [READ DRIVER] Il contenuto del device richiesto è stato letto con successo\n", MOD_NAME);
             break;
         }
     
@@ -105,7 +107,7 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
 
             if(len_msg == 0)
             {
-                printk("%s: Messaggio vuoto\n", MOD_NAME);
+                printk("%s: [READ DRIVER] Messaggio vuoto\n", MOD_NAME);
                 curr = curr->sorted_list_next;
                 continue;
             }
@@ -120,10 +122,12 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
         curr = curr->sorted_list_next;
     }
 
+    msg_to_copy[bytes_copied - 1] = '\0';
+
     if(curr == NULL)
     {
         /* EOF: Ho iterato su tutti i messaggi validi */
-        printk("%s: Il contenuto del device è stato letto completamente con successo\n", MOD_NAME);
+        printk("%s: [READ DRIVER] Il contenuto del device è stato letto completamente con successo\n", MOD_NAME);
     }
 
     index = (my_epoch & MASK) ? 1 : 0;
@@ -132,9 +136,9 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
 
     wake_up_interruptible(&the_queue);
 
-    printk("%s: Dimensione del messaggio da consegnare all'utente è pari a %ld\n", MOD_NAME, strlen(msg_to_copy) + 1);
+    printk("%s: [READ DRIVER] Dimensione del messaggio da consegnare all'utente è pari a %ld\n", MOD_NAME, strlen(msg_to_copy) + 1);
 
-    printk("%s Numero di bytes che sono stati letti dal device è pari a %ld\n", MOD_NAME, bytes_copied);
+    printk("%s [READ DRIVER] Numero di bytes che sono stati letti dal device è pari a %ld\n", MOD_NAME, bytes_copied);
 
     if(bytes_copied > 0)
     {
@@ -142,14 +146,28 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
     }
     else
     {
-        printk("%s: [ERRORE] Il numero di byte copiati dal device è pari a 0\n", MOD_NAME);
+        printk("%s: [ERRORE READ DRIVER] Il numero di byte copiati dal device è pari a 0\n", MOD_NAME);
         ret = 0;
     }
 
     *off = 1;
 
-    return len - ret;
+    return bytes_copied - ret;
 
+}
+
+
+
+int onefilefs_open(struct inode *inode, struct file *file) {
+
+  	 return 0;
+}
+
+
+
+int onefilefs_release(struct inode *inode, struct file *file) {
+
+   	return 0;
 }
 
 
@@ -223,4 +241,6 @@ const struct inode_operations soafs_inode_ops = {
 const struct file_operations soafs_file_operations = {
     .owner = THIS_MODULE,
     .read = onefilefs_read,
+    .open = onefilefs_open,
+    .release = onefilefs_release,
 };
