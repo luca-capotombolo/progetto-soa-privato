@@ -126,7 +126,7 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
 
     if(curr == NULL)
     {
-        /* EOF: Ho iterato su tutti i messaggi validi */
+        /* Ho iterato su tutti i messaggi validi */
         printk("%s: [READ DRIVER] Il contenuto del device è stato letto completamente con successo\n", MOD_NAME);
     }
 
@@ -135,10 +135,6 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
     __sync_fetch_and_add(&(gp->standing_sorted[index]),1);
 
     wake_up_interruptible(&the_queue);
-
-    printk("%s: [READ DRIVER] Dimensione del messaggio da consegnare all'utente è pari a %ld\n", MOD_NAME, strlen(msg_to_copy) + 1);
-
-    printk("%s [READ DRIVER] Numero di bytes che sono stati letti dal device è pari a %ld\n", MOD_NAME, bytes_copied);
 
     if(bytes_copied > 0)
     {
