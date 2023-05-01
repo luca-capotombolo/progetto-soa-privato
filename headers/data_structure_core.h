@@ -69,6 +69,7 @@ extern uint64_t **bitmask;
 extern uint64_t num_block_free_used;                            /* Numero di blocchi liberi (istante t = 0) utilizzati. */
 extern uint64_t empty_actual_size;                              /* Il numero massimo di blocchi che carico quando la free list si svuota. */
 extern int x;                                                   /* Numero di entry della hash table. */
+extern int is_free;
 
 extern void compute_num_rows(uint64_t num_data_block);
 extern int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint64_t actual_size);

@@ -285,7 +285,7 @@ int flush_valid_block(void)
 
 /*
  * Questa funzione ha il compito di deallocare le strutture
- * dati core che sono state utilizzate per l'attaule istanza
+ * dati core che sono state utilizzate per l'attuale istanza
  * di montaggio del FS.
  * Una nuova istanza di montaggio del FS necessiterà di nuove
  * strutture dati.
@@ -349,6 +349,8 @@ void free_all_memory(void)
 
     /* Dealloco la tabella hash */
     kfree(hash_table_valid);
+
+    hash_table_valid = NULL;
     
     printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione della HT avvenuta con successo\n", MOD_NAME);
 
@@ -363,6 +365,8 @@ void free_all_memory(void)
     }
 
     kfree(bitmask);
+
+    bitmask = NULL;
 
     printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione della BITMASK avvenuta con successo\n", MOD_NAME);
 
@@ -550,6 +554,9 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     if(sb_set_blocksize(sb, SOAFS_BLOCK_SIZE) == 0)
     {
         printk("%s: [ERRORE MONTAGGIO] Errore nel setup della dimensione del superblocco.\n", MOD_NAME);
+
+        is_free = 1;
+
         return -EIO;
     }
    
@@ -562,6 +569,9 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
 
     if(bh == NULL){
         printk("%s: [ERRORE MONTAGGIO] Errore nella lettura del superblocco.\n", MOD_NAME);
+
+        is_free = 1;
+
 	    return -EIO;
     }
 
@@ -572,14 +582,23 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     if( (sb_disk->num_block > NBLOCKS) || ((sb_disk->num_block - sb_disk->num_block_state - 2) <= 0) )
     {
         printk("%s: [ERRORE MONTAGGIO] Il numero di blocchi del dispositivo non è valido.\n", MOD_NAME);
+
         brelse(bh);
+
+        is_free = 1;
+
         return -EINVAL;
     }
 
     /* Verifico il valore del magic number presente nel superblocco sul device. */
-    if(sb_disk->magic != SOAFS_MAGIC_NUMBER){
+    if(sb_disk->magic != SOAFS_MAGIC_NUMBER)
+    {
         printk("%s: [ERRORE MONTAGGIO] Mancata corrispondenza tra i due magic number.\n", MOD_NAME);
+
         brelse(bh);
+
+        is_free = 1;
+
 	    return -EBADF;
     }
 
@@ -593,7 +612,11 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     if(sbi == NULL)
     {
         printk("%s: [ERRORE MONTAGGIO] Errore kzalloc() nell'allocazione della struttura dati soafs_sb_info.\n", MOD_NAME);
+
         brelse(bh);
+
+        is_free = 1;
+
         return -ENOMEM;
     }
 
@@ -615,8 +638,13 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     if(!root_inode)
     {
         printk("%s: [ERRORE MONTAGGIO] Errore nel recupero del root inode.\n", MOD_NAME);
+
         brelse(bh);
+
         kfree(sbi);
+
+        is_free = 1;
+
         return -ENOMEM;
     }
 
@@ -636,8 +664,13 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     if (!root_dentry)
     {
         printk("%s: [ERRORE MONTAGGIO] Errore nella creazione della root directory.\n", MOD_NAME);
+
         brelse(bh);
+
         kfree(sbi);
+
+        is_free = 1;
+
         return -ENOMEM;
     }
 
@@ -654,8 +687,11 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     if(ret)
     {
         printk("%s: [ERRORE MONTAGGIO] Errore nella inizializzazione delle strutture dati core del modulo.\n", MOD_NAME);
+
         brelse(bh);
+
         kfree(sbi);
+
         return -EIO;
     }
 
@@ -664,10 +700,15 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     if(ret)
     {
         printk("%s: [ERRORE MONTAGGIO] Errore nella creazione del thread demone\n", MOD_NAME);
+
         brelse(bh);
+
         free_all_memory();
+
         kfree(sbi);
+
         is_free = 1;
+
         return -EIO;        
     }
 
@@ -754,6 +795,7 @@ static struct dentry *soafs_mount(struct file_system_type *fs_type, int flags, c
     if(is_mounted)
     {
         printk("%s: [ERRORE MONTAGGIO] Esiste già un altro montaggio del file system di tipo %s\n", MOD_NAME, fs_type->name);
+
         return ERR_PTR(-EINVAL);
     }
     
@@ -762,11 +804,13 @@ static struct dentry *soafs_mount(struct file_system_type *fs_type, int flags, c
     if (unlikely(IS_ERR(ret)))
     {
         printk("%s: [ERRORE MONTAGGIO] Errore durante il montaggio del File System 'soafs'.\n",MOD_NAME);
+
         is_mounted = 0;
     }
     else
     {
         printk("%s: [MONTAGGIO] Montaggio del File System sul device %s avvenuto con successo.\n",MOD_NAME,dev_name);
+
         is_mounted = 1;     /* Registro il fatto che il file system è stato montato */
     }
 

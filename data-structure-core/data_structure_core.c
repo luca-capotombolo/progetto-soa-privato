@@ -7,16 +7,15 @@
 
 
 
-struct block *head_sorted_list = NULL;                          /* Puntatore alla testa della lista contenente i blocchi nell'ordine di consegna. */
-struct block_free *head_free_block_list = NULL;                 /* Puntatore alla testa della lista contenente i blocchi liberi. */
-struct ht_valid_entry *hash_table_valid = NULL;                 /* Hash table */
-uint64_t num_block_free_used = 0;
-uint64_t pos = 0;
-uint64_t**bitmask = NULL;
-int x = 0;
-struct grace_period *gp = NULL;
-
-uint64_t sync_var = 0;
+struct block *head_sorted_list = NULL;              /* Puntatore alla testa della lista contenente i blocchi nell'ordine di consegna */
+struct block_free *head_free_block_list = NULL;     /* Puntatore alla testa della lista contenente i blocchi liberi */
+struct ht_valid_entry *hash_table_valid = NULL;     /* Hash table */
+uint64_t num_block_free_used = 0;                   /* Numero di blocchi liberi al tempo di montaggio caricati nella lista */
+uint64_t pos = 0;                                   /* Indice da cui iniziare la ricerca dei nuovi blocchi liberi */
+uint64_t**bitmask = NULL;                           /* Bitmask */
+int x = 0;                                          /* Numero righe della Tabella Hash */
+struct grace_period *gp = NULL;                     /* Strtuttura dati per il Grace Period */
+uint64_t sync_var = 0;                              /* Variabile per la sincronizzazione inserimenti-invalidazioni */
 
 
 
@@ -517,7 +516,7 @@ sleep_again:
 
     wait_event_interruptible(the_queue, (gp->standing_ht[index_ht] >= grace_period_threads_ht) && (gp->standing_sorted[index_sorted] >= grace_period_threads_sorted));
 
-    printk("%s: gp->standing_ht[index_ht] = %ld\tgrace_period_threads_ht = %ld\ngp->standing_sorted[index_sorted] = %ld\tgrace_period_threads_sorted = %ld\n", MOD_NAME, gp->standing_ht[index_ht], grace_period_threads_ht, gp->standing_sorted[index_sorted], grace_period_threads_sorted);
+    printk("%s: gp->standing_ht[index_ht] = %ld\tgrace_period_threads_ht = %ld\tgp->standing_sorted[index_sorted] = %ld\tgrace_period_threads_sorted = %ld\n", MOD_NAME, gp->standing_ht[index_ht], grace_period_threads_ht, gp->standing_sorted[index_sorted], grace_period_threads_sorted);
 
     if((gp->standing_ht[index_ht] < grace_period_threads_ht) || (gp->standing_sorted[index_sorted] < grace_period_threads_sorted))
     {
@@ -599,6 +598,7 @@ int init_bitmask(void)
     if(num_block_state <= 0)
     {
         printk("%s: [ERRORE INIZIALIZZAZIONE CORE - BITMASK] Numero dei blocchi di stato non è valido.\n", MOD_NAME);
+
         return 1;
     }
 
@@ -609,6 +609,7 @@ int init_bitmask(void)
     if(bitmask == NULL)
     {
         printk("%s: [ERRORE INIZIALIZZAZIONE CORE - BITMASK] Errore esecuzione kzalloc() durante l'allocazione della bitmask.", MOD_NAME);
+
         return 1;
     }
 
@@ -628,6 +629,10 @@ int init_bitmask(void)
                 kfree(bitmask[roll_index]);    
             }
 
+            kfree(bitmask);
+
+            bitmask = NULL;
+
             printk("%s: [ERRORE INIZIALIZZAZIONE CORE - BITMASK] Deallocazioni eseguite con successo.\n", MOD_NAME);
 
 	        return 1;
@@ -644,6 +649,10 @@ int init_bitmask(void)
             {
                 kfree(bitmask[roll_index]);    
             }
+
+            kfree(bitmask);
+
+            bitmask = NULL;
 
             printk("%s: [ERRORE INIZIALIZZAZIONE CORE - BITMASK] Deallocazioni eseguite con successo.\n", MOD_NAME);
 
@@ -999,6 +1008,7 @@ int init_free_block_list(uint64_t *index_free, uint64_t actual_size) //
     if(SIZE_INIT < actual_size)
     {
         printk("%s: [ERRORE INIZIALIZZAZIONE CORE - FREE LIST]  Errore nella dimensione dell'array.\nACTUAL_SIZE = %lld\tSIZE_INIT = %d\n", MOD_NAME, actual_size, SIZE_INIT);
+
         return 1;
     }
 
@@ -1011,12 +1021,17 @@ int init_free_block_list(uint64_t *index_free, uint64_t actual_size) //
         if(ret)
         {
             printk("%s: [ERRORE INIZIALIZZAZIONE CORE - FREE LIST] Errore kzalloc() free_list indice %lld.\n", MOD_NAME, index);
+
             for(roll_index=0; roll_index<index;roll_index++)
             {
                 roll_bf = head_free_block_list->next;
+
                 kfree(head_free_block_list);
+
                 head_free_block_list = roll_bf;
             }
+
+            printk("%s: [ERRORE INIZIALIZZAZIONE CORE - FREE LIST] Rollback eseguito con successo...\n", MOD_NAME);
 
             return 1;
         }
@@ -1075,12 +1090,10 @@ void set_bitmask(uint64_t index, int mode)
     if(mode)
     {
         __sync_fetch_and_or(&(bitmask[bitmask_entry][array_entry]), shift_base);
-        //bitmask[bitmask_entry][array_entry] |= (base << offset);
     }
     else
     {
         __sync_fetch_and_xor(&(bitmask[bitmask_entry][array_entry]), shift_base);
-        //bitmask[bitmask_entry][array_entry] ^= (base << offset);
     }   
 
 }
@@ -1630,16 +1643,23 @@ int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint
     uint64_t index;
     size_t size_ht;
     struct soafs_sb_info *sbi;
+    struct block_free *roll_bf;
 
     if(sb_global == NULL)
     {
         printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Il contenuto del superblocco non è valido. Impossibile inizializzare le strutture dati core.\n", MOD_NAME);
+
+        is_free = 1;
+
         return 1;
     }
 
     if(num_data_block <= 0)
     {
         printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Il numero dei blocchi di dati del device non è valido. Impossibile inizializzare le strutture dati core.\n", MOD_NAME);
+
+        is_free = 1;
+
         return 1;
     }
 
@@ -1649,6 +1669,9 @@ int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint
     if(ret)
     {
         printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Errore inizializzazione bitmask, non è possibile completare l'inizializzazione core.\n", MOD_NAME);
+
+        is_free = 1;
+
         return 1;
     }
 
@@ -1656,15 +1679,23 @@ int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint
 
     printk("%s: [INIZIALIZZAZIONE CORE] Valore di 'actual_size' è pari a %lld\n", MOD_NAME, actual_size);
 
-    if( (actual_size < 0) || (sbi->num_block_free < 0) )
+    if( (actual_size < 0) || (sbi->num_block_free < 0) || ((actual_size > 0) && (sbi->num_block_free == 0)) )
     {
         printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Le informazioni sui blocchi liberi non sono valide.\n", MOD_NAME);
-        return 1;
-    }
 
-    if( (actual_size > 0) && (sbi->num_block_free == 0) )
-    {
-        printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Problema di inconsistenza tra il numero dei blocchi liberi e la dimensione dell'array.\n", MOD_NAME);
+        for(index=0;index<sbi->num_block_state;index++)
+        {
+            kfree(bitmask[index]);        
+        }
+
+        kfree(bitmask);
+
+        bitmask = NULL;
+
+        printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Deallocazione bitmask completata con successo...\n", MOD_NAME);
+
+        is_free = 1;
+
         return 1;
     }
 
@@ -1677,12 +1708,27 @@ int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint
         if(ret)
         {
             printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Errore inizializzazione free_block_list, non è possibile completare l'inizializzazione core.\n", MOD_NAME);
-            // kfree(bitmask);
+    
+            for(index=0;index<sbi->num_block_state;index++)
+            {
+                kfree(bitmask[index]);        
+            }
+
+            kfree(bitmask);
+
+            bitmask = NULL;
+
+            printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Deallocazione bitmask completata con successo...\n", MOD_NAME);
+
+            is_free = 1;
+
             return 1;
         }
 
     }else
     {
+        num_block_free_used = 0;
+
         head_free_block_list = NULL;
     }
 
@@ -1697,6 +1743,38 @@ int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint
     if(hash_table_valid == NULL)
     {
         printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Errore esecuzione kmalloc() nell'allocazione della memoria per la tabella hash.\n", MOD_NAME);
+
+        for(index=0;index<sbi->num_block_state;index++)
+        {   
+            kfree(bitmask[index]);        
+        }
+
+        kfree(bitmask);
+
+        bitmask = NULL;
+
+        printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Deallocazione bitmask completata con successo...\n", MOD_NAME);
+
+        for(index=0; index<actual_size; index++)
+        {
+            roll_bf = head_free_block_list->next;
+
+            kfree(head_free_block_list);
+
+            head_free_block_list = roll_bf;
+        }
+
+        if(head_free_block_list != NULL)
+        {
+            printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Errore nella deallocazione della FREE LIST... La lista non è vuota al termine della deallocazione\n", MOD_NAME);
+        }
+        else
+        {
+            printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Deallocazione della FREE LIST completata con successo...\n", MOD_NAME);
+        }
+
+        is_free = 1;
+
         return 1;
     }
 
@@ -1710,7 +1788,38 @@ int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint
     if(ret)
     {
         printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Errore inizializzazione HT e sorted_list\n", MOD_NAME);
-        // fai le kfree BITMASK e FREE LIST
+
+        for(index=0;index<sbi->num_block_state;index++)
+        {   
+            kfree(bitmask[index]);        
+        }
+
+        kfree(bitmask);
+
+        bitmask = NULL;
+
+        printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Deallocazione bitmask completata con successo...\n", MOD_NAME);
+
+        for(index=0; index<actual_size; index++)
+        {
+            roll_bf = head_free_block_list->next;
+
+            kfree(head_free_block_list);
+
+            head_free_block_list = roll_bf;
+        }
+
+        if(head_free_block_list != NULL)
+        {
+            printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Errore nella deallocazione della FREE LIST... La lista non è vuota al termine della deallocazione\n", MOD_NAME);
+        }
+        else
+        {
+            printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Deallocazione della FREE LIST completata con successo...\n", MOD_NAME);
+        }
+    
+        is_free = 1;
+
         return 1;
     }
 
@@ -1719,7 +1828,11 @@ int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint
     if(gp == NULL)
     {
         printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Errore inizializzazione grace period\n", MOD_NAME);
+
         free_all_memory();
+
+        is_free = 1;
+
         return 1;
     }
 
