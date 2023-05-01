@@ -321,9 +321,11 @@ void invalidate_all_blocks_with_threads(void)
 
 int main(int argc, char** argv){
     int i;
+
+    read_file();
 	
-    //invalidate_all_blocks_with_threads();
-/*
+    invalidate_all_blocks_with_threads();
+
     for(i=0; i<NBLOCKS; i++)
     {
         if(invalidate_test_first_time[i] != -1)
@@ -336,6 +338,8 @@ int main(int argc, char** argv){
     }
 
     printf("Test #0 passato con successo\n");
+
+    read_file();
 
     write_all_blocks_with_threads();
 
@@ -351,10 +355,8 @@ int main(int argc, char** argv){
     }
 
     printf("Test #1 passatto con successo\n");
-*/
 
     read_file();
 
-    read_file();
 	return 0;
 }

@@ -360,7 +360,7 @@ retry:
     {
         printk("%s: [ERRORE PUT DATA] Errore nell'inserimento del nuovo blocco con indice %lld\n", MOD_NAME, index);
         kfree(msg);
-        return -EIO;
+        return -ENOMEM;
     }
 
     /* Dealloco la struttura dati che rappresenta il blocco libero ottenuto in precedenza */
@@ -369,7 +369,7 @@ retry:
     /* Comunico che il blocco inserito risulta essere valido */
     set_bitmask(index, 1);    
 
-    printk("%s: [PUT DATA] Il messaggio '%s' è stato inserito con successo\n", MOD_NAME, msg);
+    printk("%s: [PUT DATA] Il messaggio '%s' è stato inserito con successo nel blocco %lld\n", MOD_NAME, msg, index);
 
     return index;
 
