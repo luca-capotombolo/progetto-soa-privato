@@ -12,6 +12,8 @@
 #include <linux/string.h>       /* strncpy() */
 #include "./headers/main_header.h"
 
+#define SYNC
+
 
 
 MODULE_LICENSE(LICENSE);
@@ -183,8 +185,7 @@ __SYSCALL_DEFINEx(2, _put_data, char *, source, size_t, size){
 #else
 asmlinkage uint64_t sys_put_data(char * source, size_t size){
 #endif
-    struct soafs_sb_info *sbi;
-    struct block_free *item;
+
     int available_data;
     int ret;
     int n;                          /* Numero corrente di tentativi per il recupero del blocco libero */
@@ -193,6 +194,11 @@ asmlinkage uint64_t sys_put_data(char * source, size_t size){
     size_t bytes_to_copy;           /* Il numero di bytes che verranno effettivamente copiati dallo spazio utente */    
     unsigned long bytes_ret;        /* Il numero di bytes effettivamente copiati */
     uint64_t index;
+    uint64_t num_block_state;
+    struct soafs_sb_info *sbi;
+    struct block_free *item;
+    struct buffer_head *bh;
+    struct soafs_block *b;
 
     LOG_SYSTEM_CALL("PUT_DATA", "put_data");
 
@@ -363,6 +369,43 @@ retry:
         return -ENOMEM;
     }
 
+    /* Gestione del riporto dei dati sul device */
+
+    sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
+
+    num_block_state = sbi->num_block_state;
+
+    n = 0;
+
+retry_get_device_block:
+
+    bh = sb_bread(sb_global, 2 + num_block_state + index);
+
+    if(bh == NULL)
+    {
+        printk("%s: [ERRORE PUT DATA] Errore nella lettura del blocco %lld dal device al tentativo numero %d\n", MOD_NAME, index, n);
+        n++;
+        goto retry_get_device_block;
+    }
+
+    b = (struct soafs_block *)bh->b_data;
+
+    strncpy(b->msg, msg, strlen(msg) + 1);
+
+    mark_buffer_dirty(bh);
+
+#ifdef SYNC
+
+    sync_dirty_buffer(bh);
+
+    printk("%s: [PUT DATA] Esecuzione sincrona flush dei dati\n", MOD_NAME);
+
+#endif
+
+    brelse(bh);
+
+    printk("%s: [PUT DATA] Terminata esecuzione flush dei dati sul device\n", MOD_NAME);
+
     /* Dealloco la struttura dati che rappresenta il blocco libero ottenuto in precedenza */
     kfree(item);
 
@@ -372,30 +415,6 @@ retry:
     printk("%s: [PUT DATA] Il messaggio '%s' è stato inserito con successo nel blocco %lld\n", MOD_NAME, msg, index);
 
     return index;
-
-
-/* ------------------------------------------------------------------------------------------------------ 
-
-    //TODO: determina, se esiste, un blocco libero per la scrittura del messaggio
-    bh = sb_bread(sb_global, 2);                            
-
-    if(bh == NULL)
-    {
-        LOG_BH("put_data", "scrittura", 2, "errore");
-        return -EIO;
-    }
-
-    LOG_BH("put_data", "scrittura", 2, "successo");  
-
-    msg_block = (char *)bh->b_data;                 
-
-    memcpy(msg_block, msg, msg_size);
-
-    mark_buffer_dirty(bh);                          
-
-    brelse(bh);                                 
-
-    return bytes_to_copy - bytes_ret;*/
 	
 }
 

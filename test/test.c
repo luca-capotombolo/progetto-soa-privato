@@ -118,6 +118,8 @@ void read_file()
     printf("[READ FILE] I messaggi che sono stati letti dal device sono:\n%s", msg_read);
 
     close(fd);
+
+    printf("[READ FILE] La lettura si è completata con successo\n");
 }
 
 
@@ -271,6 +273,8 @@ void * invalidate_block_with_thread(void *id)
 
     ret = invalidate_data((uint64_t)id);
 
+    printf("Il thread %ld ha chiamato l'invalidazione\n", index);
+
     if(ret == -1)
     {
         printf("[ERRORE INVALIDATE BLOCK WITH THREAD] L'invalidazione per il blocco %ld è terminata con un insuccesso\n", (uint64_t)id);
@@ -302,14 +306,14 @@ void invalidate_all_blocks_with_threads(void)
         return;
     }
 
-    //for(i=0;i<NBLOCKS; i++)
-    for(i=0;i<1; i++)
+    for(i=0;i<NBLOCKS; i++)
+    //for(i=0;i<1; i++)
     {
         pthread_create(&tid[i],NULL,invalidate_block_with_thread,(void *)(i));
     }
 
-    //for(i=0; i<NBLOCKS; i++)
-    for(i=0;i<1; i++)
+    for(i=0; i<NBLOCKS; i++)
+    //for(i=0;i<1; i++)
     {
         pthread_join(tid[i], NULL);
     }
@@ -324,15 +328,6 @@ void invalidate_all_blocks_with_threads(void)
 int main(int argc, char** argv){
     int i;
 
-    //invalidate_data(0);
-    
-    //invalidate_data(78);
-
-    put_data("Ci provo 3");
-
-    //put_data("Ci provo 2");
-    
-/*
     read_file();
 	
     invalidate_all_blocks_with_threads();
@@ -368,6 +363,6 @@ int main(int argc, char** argv){
     printf("Test #1 passatto con successo\n");
 
     read_file();
-*/
+
 	return 0;
 }
