@@ -9,6 +9,7 @@
 #include <linux/sched.h>
 #include <linux/kthread.h>
 #include <linux/delay.h>
+#include <linux/version.h>	/* For LINUX_VERSION_CODE */
 
 #include "../headers/main_header.h"
 
@@ -649,7 +650,13 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     }
 
     root_inode->i_ino = SOAFS_ROOT_INODE_NUMBER;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
     inode_init_owner(&init_user_ns, root_inode, NULL, S_IFDIR);
+#else
+    inode_init_owner(root_inode, NULL, S_IFDIR);
+#endif
+
     root_inode->i_sb = sb;
     root_inode->i_mode = S_IFDIR | S_IRUSR | S_IRGRP | S_IROTH | S_IWUSR | S_IWGRP | S_IXUSR | S_IXGRP | S_IXOTH;
     ktime_get_real_ts64(&curr_time);
