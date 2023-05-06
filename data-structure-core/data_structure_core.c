@@ -673,8 +673,6 @@ int init_bitmask(void)
 
     printk("%s: [INIZIALIZZAZIONE CORE - BITMASK] Inizializzazione bitmask completata con successo.\n", MOD_NAME);
 
-    asm volatile("mfence");
-
     return 0;
     
 }
@@ -983,8 +981,6 @@ int insert_free_list(uint64_t index) //
     }
 
     //printk("%s: [INIZIALIZZAZIONE CORE - FREE LIST] Inserito il blocco %lld nella lista dei blocchi liberi.\n", MOD_NAME, index);
-
-    asm volatile("mfence");
 
     return 0;
 }
@@ -1490,8 +1486,6 @@ retry_insert_ht:
 
     printk("%s: [PUT DATA - INSERIMENTO HT + SORTED] Inserimento blocco %lld nella sorted list avvenuto con successo\n", MOD_NAME, index);
 
-    asm volatile("mfence");
-
     return 0;    
 }
 
@@ -1559,8 +1553,6 @@ static int insert_hash_table_valid_and_sorted_list(char *data_block_msg, uint64_
 
     /* Inserimento del blocco nella lista ordinata */
     insert_sorted_list(new_item);
-
-    asm volatile("mfence");
 
     return 0;   
     

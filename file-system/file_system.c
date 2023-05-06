@@ -441,7 +441,7 @@ retry_house_keeper:
 
         mutex_unlock(&invalidate_mutex);
 
-        goto retry_house_keeper;
+        goto sleep_kt;
     }
 
     /* Comunico l'inizio del processo di azzeramento del contatore */
@@ -797,12 +797,14 @@ exit_kill_sb:
 
 static struct dentry *soafs_mount(struct file_system_type *fs_type, int flags, const char *dev_name, void *data)
 {
+    int ret_cmp;
     struct dentry *ret;
 
-    if(is_mounted)
+    ret_cmp = __sync_bool_compare_and_swap(&is_mounted, 0, 1);
+
+    if(!ret_cmp)
     {
         printk("%s: [ERRORE MONTAGGIO] Esiste già un altro montaggio del file system di tipo %s\n", MOD_NAME, fs_type->name);
-
         return ERR_PTR(-EINVAL);
     }
     
@@ -812,13 +814,11 @@ static struct dentry *soafs_mount(struct file_system_type *fs_type, int flags, c
     {
         printk("%s: [ERRORE MONTAGGIO] Errore durante il montaggio del File System 'soafs'.\n",MOD_NAME);
 
-        is_mounted = 0;
+        __sync_fetch_and_sub(&is_mounted,1);
     }
     else
     {
         printk("%s: [MONTAGGIO] Montaggio del File System sul device %s avvenuto con successo.\n",MOD_NAME,dev_name);
-
-        is_mounted = 1;     /* Registro il fatto che il file system è stato montato */
     }
 
     return ret;
