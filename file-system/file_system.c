@@ -131,8 +131,9 @@ static int set_free_block(void)
 
         if(!ret)
         {
+#ifdef NOT_CRITICAL
             printk("%s: [SMONTAGGIO - SET FREE BLOCK] Blocco libero #%lld\n", MOD_NAME, index);
-
+#endif
             if(counter < update_list_size)
             {
                 free_blocks[counter] = index;
@@ -212,12 +213,15 @@ int flush_bitmask(void)
 
         sync_dirty_buffer(bh);
 
+#ifdef NOT_CRITICAL
         printk("%s: [SMONTAGGIO - FLUSH BITMASK] Flush dei dati per il blocco di stato #%lld avvenuto con successo\n", MOD_NAME, counter);        
-        
+#endif
         counter++;
 
         brelse(bh);
     }
+
+    printk("%s: [SMONTAGGIO - FLUSH BITMASK] Blocchi di stato flushati correttamente: %lld/%lld\n", MOD_NAME, counter, num_block_state);
 
     return 0;
 }
@@ -255,9 +259,9 @@ int flush_valid_block(void)
     while(curr != NULL)
     {
         index = curr->block_index;
-    
+#ifdef NOT_CRITICAL
         printk("%s: [SMONTAGGIO - FLUSH VALID BLOCK]  Il blocco con indice %lld deve essere riportato su device\n", MOD_NAME, index);
-
+#endif
         bh = sb_bread(sb_global, 2 + num_block_state + index);
 
         b = (struct soafs_block *)bh->b_data;
@@ -308,12 +312,16 @@ void free_all_memory(void)
         {
             next_bf = head_free_block_list->next;
 
+#ifdef NOT_CRITICAL
             printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione blocco #%lld...\n", MOD_NAME, head_free_block_list->block_index);
-        
+#endif
+
             kfree(head_free_block_list);
 
+#ifdef NOT_CRITICAL
             printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione blocco #%lld avvenuta con successo\n", MOD_NAME, head_free_block_list->block_index);
-    
+#endif
+
             head_free_block_list = next_bf;
         }
 
@@ -336,12 +344,16 @@ void free_all_memory(void)
         {
             next_b = head_sorted_list->sorted_list_next;
 
+#ifdef NOT_CRITICAL
             printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione blocco #%lld...\n", MOD_NAME, head_sorted_list->block_index);
-        
+#endif
+
             kfree(head_sorted_list);
 
+#ifdef NOT_CRITICAL
             printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione blocco #%lld avvenuta con successo\n", MOD_NAME, head_sorted_list->block_index);
-    
+#endif
+
             head_sorted_list = next_b;
         }
     
@@ -424,12 +436,15 @@ retry_house_keeper:
     {
         mutex_unlock(&inval_insert_mutex);
 
-        printk("%s: [ERRORE HOUSE KEEPER] Il thread demone viene messo in attesa\n", MOD_NAME);
+#ifdef NOT_CRITICAL
+        printk("%s: [HOUSE KEEPER] Il thread demone viene messo in attesa\n", MOD_NAME);
+#endif
 
         wait_event_interruptible(the_queue, (sync_var & MASK_NUMINSERT) == 0);
 
-        printk("%s: [ERRORE HOUSE KEEPER] Il thread demone riprende l'esecuzione\n", MOD_NAME);
-
+#ifdef NOT_CRITICAL
+        printk("%s: [HOUSE KEEPER] Il thread demone riprende l'esecuzione\n", MOD_NAME);
+#endif
         goto retry_house_keeper;
     }
 
@@ -470,14 +485,18 @@ retry_house_keeper:
     grace_period_threads_ht = last_epoch_ht & (~MASK);
     grace_period_threads_sorted = last_epoch_sorted & (~MASK);
 
+#ifdef NOT_CRITICAL
     printk("%s: [HOUSE KEEPER] Attesa della terminazione del grace period HT: #threads %ld\n", MOD_NAME, grace_period_threads_ht);
     printk("%s: [HOUSE KEEPER] Attesa della terminazione del grace period lista ordinata: #threads %ld\n", MOD_NAME, grace_period_threads_sorted);
+#endif
 
 sleep_again:
 
     wait_event_interruptible(the_queue, (gp->standing_ht[index_ht] >= grace_period_threads_ht) && (gp->standing_sorted[index_sorted] >= grace_period_threads_sorted));
 
+#ifdef NOT_CRITICAL_BUT
     printk("%s: gp->standing_ht[index_ht] = %ld\tgrace_period_threads_ht = %ld\tgp->standing_sorted[index_sorted] = %ld\tgrace_period_threads_sorted = %ld\n", MOD_NAME, gp->standing_ht[index_ht], grace_period_threads_ht, gp->standing_sorted[index_sorted], grace_period_threads_sorted);
+#endif
 
     if((gp->standing_ht[index_ht] < grace_period_threads_ht) || (gp->standing_sorted[index_sorted] < grace_period_threads_sorted))
     {
@@ -494,8 +513,6 @@ sleep_again:
     mutex_unlock(&invalidate_mutex);
 
     wake_up_interruptible(&the_queue);
-
-    printk("%s: [HOUSE KEEPER] Ritorno a dormire...\n", MOD_NAME);
 
     goto sleep_kt;
     
@@ -739,7 +756,7 @@ static void soafs_kill_sb(struct super_block *sb)
 
     if(is_free)
     {
-        printk("%s: [ERRORE SMONTAGGIO] Le strutture dati sono state già deallocate e il FS non è stato utilizzato\n", MOD_NAME);
+        printk("%s: [SMONTAGGIO] Le strutture dati sono state già deallocate e il FS non è stato utilizzato\n", MOD_NAME);
         goto exit_kill_sb;
     }
 

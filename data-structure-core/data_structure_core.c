@@ -160,7 +160,9 @@ char * read_data_block(uint64_t offset, struct ht_valid_entry *entry)
 
     if(item == NULL)
     {
+#ifdef NOT_CRITICAL_BUT
         printk("%s: [ERRORE GET DATA] Il blocco richiesto %lld è stato invalidato in concorrenza\n", MOD_NAME, offset);
+#endif
         return NULL;
     }
     
@@ -200,7 +202,9 @@ retry_insert_free_list_conc:
         goto retry_insert_free_list_conc;
     }
 
+#ifdef NOT_CRITICAL_BUT
     printk("%s: [INSERT FREE LIST] L'inserimento in testa del blocco %lld avvenuto con successo\n", MOD_NAME, item->block_index);
+#endif
 }
 
 
@@ -238,7 +242,9 @@ struct result_inval * remove_block(uint64_t index)
     /* Gestione di invalidazioni */
     if(curr == NULL)
     {
+#ifdef NOT_CRITICAL_BUT
         printk("%s: [ERRORE INVALIDATE DATA - REMOVE] La lista #%d nella HT risulta essere vuota\n", MOD_NAME, num_entry_ht);
+#endif
 
         res_inval->code = 2;
 
@@ -253,7 +259,9 @@ struct result_inval * remove_block(uint64_t index)
 
         asm volatile ("mfence");
 
+#ifdef NOT_CRITICAL
         printk("%s: [INVALIDATE DATA - REMOVE] Il blocco %lld richiesto per l'invalidazione è stato eliminato con successo dalla lista nella HT\n", MOD_NAME, index);
+#endif
 
         goto remove_sorted_list;
     }
@@ -270,7 +278,9 @@ struct result_inval * remove_block(uint64_t index)
     {
         if(curr->block_index == index)
         {
+#ifdef NOT_CRITICAL
             printk("%s: [INVALIDATE DATA - REMOVE] Il blocco %lld da invalidare è stato trovato con successo nella lista della HT\n", MOD_NAME, index);
+#endif
 
             next = curr->hash_table_next;
 
@@ -283,7 +293,9 @@ struct result_inval * remove_block(uint64_t index)
 
     if( curr == NULL )
     {
+#ifdef NOT_CRITICAL_BUT
         printk("%s: [ERRORE INVALIDATE DATA - REMOVE] Il blocco %lld richiesto per l'invalidazione non è presente nella lista #%d della HT\n", MOD_NAME, index, num_entry_ht);
+#endif
         res_inval->code = 2;
         res_inval->block = NULL;
         return res_inval;
@@ -293,7 +305,9 @@ struct result_inval * remove_block(uint64_t index)
 
     asm volatile ("mfence");
 
+#ifdef NOT_CRITICAL
     printk("%s: [INVALIDAZIONE] Il blocco %lld richiesto per l'invalidazione è stato eliminato con successo dalla lista nella HT\n", MOD_NAME, index);
+#endif
 
 remove_sorted_list:
 
@@ -324,7 +338,9 @@ remove_sorted_list:
 
         asm volatile ("mfence");
 
+#ifdef NOT_CRITICAL
         printk("%s: [INVALIDATE DATA - REMOVE] Il blocco %lld richiesto per l'invalidazione è stato eliminato con successo dalla lista ordinata\n", MOD_NAME, index);
+#endif
 
         return res_inval;
     }
@@ -339,7 +355,9 @@ remove_sorted_list:
     {
         if(curr->block_index == index)
         {
+#ifdef NOT_CRITICAL
             printk("%s: [INVALIDATE DATA - REMOVE] Il blocco %lld da invalidare è stato trovato con successo nella lista ordinata\n", MOD_NAME, index);
+#endif
 
             next = curr->sorted_list_next;
 
@@ -370,7 +388,9 @@ remove_sorted_list:
  
     asm volatile ("mfence");  
 
+#ifdef NOT_CRITICAL
     printk("%s: [INVALIDATE DATA - REMOVE] Il blocco %lld richiesto per l'invalidazione è stato eliminato con successo dalla lista ordinata\n", MOD_NAME, index);
+#endif
     
     return res_inval;
 }
@@ -429,21 +449,27 @@ retry_invalidate:
     /* Recupero il numero di inserimenti in corso */
     num_insert = sync_var & MASK_NUMINSERT;
 
+#ifdef NOT_CRITICAL
     printk("%s: [INVALIDATE DATA] Il numero di inserimenti attualmente in corso è pari a %lld\n", MOD_NAME, num_insert);
+#endif
 
     if(num_insert > 0)
     {
         mutex_unlock(&inval_insert_mutex);
 
+#ifdef NOT_CRITICAL_BUT
         printk("%s: [ERRORE INVALIDATE DATA] L'invalidazione del blocco %lld non è stata effettuata al tentativo #%d\n", MOD_NAME, index, n);
 
         printk("%s: [ERRORE INVALIDATE DATA] Il thread per l'invalidazione del blocco %lld viene messo in attesa\n", MOD_NAME, index);
+#endif
 
         wait_event_interruptible(the_queue, (sync_var & MASK_NUMINSERT) == 0);
 
         n++;
 
+#ifdef NOT_CRITICAL
         printk("%s: [ERRORE INVALIDATE DATA] Nuovo tentativo #%d di invalidazione del blocco %lld\n", MOD_NAME, n, index);
+#endif
 
         goto retry_invalidate;
     }
@@ -509,14 +535,18 @@ retry_invalidate:
     grace_period_threads_ht = last_epoch_ht & (~MASK);
     grace_period_threads_sorted = last_epoch_sorted & (~MASK);
 
+#ifdef NOT_CRITICAL
     printk("%s: [INVALIDATE DATA] Attesa della terminazione del grace period HT: #threads %ld\n", MOD_NAME, grace_period_threads_ht);
     printk("%s: [INVALIDATE DATA] Attesa della terminazione del grace period lista ordinata: #threads %ld\n", MOD_NAME, grace_period_threads_sorted);
+#endif
 
 sleep_again:
 
     wait_event_interruptible(the_queue, (gp->standing_ht[index_ht] >= grace_period_threads_ht) && (gp->standing_sorted[index_sorted] >= grace_period_threads_sorted));
 
+#ifdef NOT_CRITICAL
     printk("%s: gp->standing_ht[index_ht] = %ld\tgrace_period_threads_ht = %ld\tgp->standing_sorted[index_sorted] = %ld\tgrace_period_threads_sorted = %ld\n", MOD_NAME, gp->standing_ht[index_ht], grace_period_threads_ht, gp->standing_sorted[index_sorted], grace_period_threads_sorted);
+#endif
 
     if((gp->standing_ht[index_ht] < grace_period_threads_ht) || (gp->standing_sorted[index_sorted] < grace_period_threads_sorted))
     {
@@ -533,8 +563,9 @@ sleep_again:
         free_index_block = res_inval->block->block_index;
 
         kfree(res_inval->block);
-
+#ifdef NOT_CRITICAL
         printk("%s: [INVALIDATE DATA] Deallocazione del blocco %lld eliminato con successo\n", MOD_NAME, index);
+#endif
     }
 
 retry_kmalloc_invalidate_block:
@@ -711,11 +742,13 @@ void check_consistenza(void)
 
         if(bitmask[bitmask_entry][array_entry] & (base << offset))
         {
-            printk("%s: [CHECK CONSISTENZA] Errore inconsistenza per l'indice %lld.\n", MOD_NAME, bf->block_index);
+            printk("%s: [ERRORE CHECK CONSISTENZA] Errore inconsistenza per l'indice %lld.\n", MOD_NAME, bf->block_index);
         }
         else
         {
+#ifdef NOT_CRITICAL
             printk("%s: [CHECK CONSISTENZA] Nessun errore di inconsistenza per l'indice %lld.\n", MOD_NAME, bf->block_index);
+#endif
         }
         
         bf = bf->next;
@@ -740,14 +773,18 @@ struct block_free * get_freelist_head(void)
 
 retry_freelist_head:
 
+#ifdef NOT_CRITICAL
     printk("%s: [PUT DATA - GET HEAD FREE LIST] Tentativo #%d di recupero del blocco in testa alla lista\n", MOD_NAME, n);
+#endif
 
     old_head = head_free_block_list;
 
     /* Gestione di molteplici scritture concorrenti */
     if(old_head == NULL)
     {
+#ifdef NOT_CRITICAL_BUT
         printk("%s: [ERRORE PUT DATA - GET HEAD FREE LIST] La lista risulta essere attualmente vuota al tentativo #%d\n", MOD_NAME, n);
+#endif
         return NULL;
     }
 
@@ -763,7 +800,9 @@ retry_freelist_head:
             return NULL;
         }
 
+#ifdef NOT_CRITICAL
         printk("%s: ERRORE PUT DATA - GET HEAD FREE LIST Conflitto nel determinare il blocco\n", MOD_NAME);
+#endif
     
         goto retry_freelist_head;
     }
@@ -803,11 +842,15 @@ int check_bit(uint64_t index)
 
     if(bitmask[bitmask_entry][array_entry] & (base << offset))
     {
+#ifdef NOT_CRITICAL
         printk("%s: [CHECK BIT BITMASK] Il blocco di dati ad offset %lld è valido.\n", MOD_NAME, index);
+#endif
         return 1;
     }
 
-    //printk("%s: [CHECK BIT BITMASK] Il blocco di dati ad offset %lld non è valido.\n", MOD_NAME, index);
+#ifdef NOT_CRITICAL
+    printk("%s: [CHECK BIT BITMASK] Il blocco di dati ad offset %lld non è valido.\n", MOD_NAME, index);
+#endif
     
     return 0;
 }
@@ -850,7 +893,9 @@ int get_bitmask_block(void)
 
     if( (head_free_block_list != NULL) || (num_block_free_used == sbi->num_block_free))
     {
+#ifdef NOT_CRITICAL_BUT
         printk("%s: [PUT DATA - RECUPERO BLOCCHI] I blocchi sono stati già determinati o invalidati\n", MOD_NAME);
+#endif
         return 0;
     }
 
@@ -872,9 +917,9 @@ int get_bitmask_block(void)
      */
     for(index = pos; index<num_block_data; index++)
     {
-
+#ifdef NOT_CRITICAL
         printk("%s: [PUT DATA - RECUPERO BLOCCHI] Verifica della validità del blocco con indice %lld\n", MOD_NAME, index);
-
+#endif
         ret = check_bit(index);
 
         if(!ret)
@@ -902,13 +947,17 @@ retry:
 
             if(!ret)
             {
+#ifdef NOT_CRITICAL_BUT
                     printk("%s: [ERRORE PUT DATA - RECUPERO BLOCCHI] Errore inserimento del blocco in concorrenza\n", MOD_NAME);
+#endif
                     goto retry;
             }
 
             pos = index + 1;
 
+#ifdef NOT_CRITICAL
             printk("%s: [PUT DATA - RECUPERO BLOCCHI] Il nuovo valore di pos è pari a %lld\n", MOD_NAME, pos);
+#endif
 
             num_block_free_used++;
 
@@ -924,6 +973,8 @@ retry:
              */
             if( (num_block_free_used == sbi->num_block_free)  || (count == 0) )
             {
+
+#ifdef NOT_CRITICAL_BUT
                 if(num_block_free_used == sbi->num_block_free)
                 {
                     printk("%s: [PUT DATA - RECUPERO BLOCCHI] Ho esaurito il numero di blocchi liberi totali\n", MOD_NAME);
@@ -932,6 +983,7 @@ retry:
                 {
                     printk("%s: [PUT DATA - RECUPERO BLOCCHI] Ho inserito il numero massimo di elementi all'interno della lista\n", MOD_NAME);
                 }
+#endif
 
                 break;  
             }                       
@@ -960,7 +1012,7 @@ int insert_free_list(uint64_t index) //
 
     if(new_item==NULL)
     {
-        //printk("%s: [ERRORE INIZIALIZZAZIONE CORE - FREE LIST] Errore malloc() free list.", MOD_NAME);
+        printk("%s: [ERRORE INIZIALIZZAZIONE CORE - FREE LIST] Errore malloc() free list.", MOD_NAME);
         return 1;
     }
 
@@ -968,19 +1020,19 @@ int insert_free_list(uint64_t index) //
 
     if(head_free_block_list == NULL)
     {
-        printk("%s: [[INIZIALIZZAZIONE CORE - FREE LIST] Inserimento in testa blocco #%lld\n", MOD_NAME, index);
         head_free_block_list = new_item;
         head_free_block_list -> next = NULL;
     }
     else
     {
-        printk("%s: [INIZIALIZZAZIONE CORE - FREE LIST] Inserimento non in testa blocco #%lld\n", MOD_NAME, index);
         old_head = head_free_block_list;
         head_free_block_list = new_item;
         head_free_block_list -> next = old_head;
     }
 
-    //printk("%s: [INIZIALIZZAZIONE CORE - FREE LIST] Inserito il blocco %lld nella lista dei blocchi liberi.\n", MOD_NAME, index);
+#ifdef NOT_CRITICAL
+    printk("%s: [INIZIALIZZAZIONE CORE - FREE LIST] Inserito il blocco %lld nella lista dei blocchi liberi.\n", MOD_NAME, index);
+#endif
 
     return 0;
 }
@@ -1010,8 +1062,9 @@ int init_free_block_list(uint64_t *index_free, uint64_t actual_size) //
 
     for(index=0; index<actual_size;index++)
     {
+#ifdef NOT_CRITICAL
         printk("%s: [INIZIALIZZAZIONE CORE - FREE LIST] Inserimento del blocco %lld all'interno della lista in corso...\n", MOD_NAME, index_free[index]);
-
+#endif
         ret = insert_free_list(index_free[index]);
 
         if(ret)
@@ -1031,8 +1084,9 @@ int init_free_block_list(uint64_t *index_free, uint64_t actual_size) //
 
             return 1;
         }
-
-        printk("%s: [INIZIALIZZAZIONE CORE - FREE LIST] Blocco #%lld inserito correttamente all'interno della lista\n", MOD_NAME, index_free[index]);        
+#ifdef NOT_CRITICAL
+        printk("%s: [INIZIALIZZAZIONE CORE - FREE LIST] Blocco #%lld inserito correttamente all'interno della lista\n", MOD_NAME, index_free[index]); 
+#endif       
     }
 
     num_block_free_used = actual_size;
@@ -1121,13 +1175,16 @@ int insert_sorted_list_conc(struct block *block)
 
         if(!ret)
         {
+#ifdef NOT_CRITICAL_BUT
             printk("%s: [ERRORE PUT DATA - INSERIMENTO HT + SORTED] L'inserimento in coda non è stato eseguito poiché la lista non è più vuota\n", MOD_NAME);
+#endif
             n++;
             goto no_empty;        
         }
 
+#ifdef NOT_CRITICAL_BUT
         printk("%s: [PUT DATA - INSERIMENTO HT + SORTED] Inserimento in coda nella lista ordinata effettuato con successo per il blocco %lld\n", MOD_NAME, block->block_index);
-    
+#endif    
         return 0;
     }
 
@@ -1157,12 +1214,16 @@ no_empty:
 
     if(!ret)
     {
+#ifdef NOT_CRITICAL_BUT
         printk("%s: [ERRORE PUT DATA - INSERIMENTO HT + SORTED] Tentativo di inserimento #%d del blocco %lld terminato senza successo\n", MOD_NAME, n, block->block_index);
+#endif
         n++;
         goto no_empty;
     }
 
+#ifdef NOT_CRITICAL_BUT
     printk("%s: [PUT DATA - INSERIMENTO HT + SORTED] Inserimento in coda nella lista ordinata effettuato con successo per il blocco %lld al tentativo %d\n", MOD_NAME, block->block_index, n);
+#endif
 
     return 0;    
 }
@@ -1329,7 +1390,9 @@ no_head:
     {
         n++;
 
+#ifdef NOT_CRITICAL_BUT
         printk("%s: [ERRORE PUT DATA - ROLLBACK] Tentativo #%d fallito nell'esecuzione della procedura di rollback\n", MOD_NAME, n);
+#endif
 
         goto no_head;
     }
@@ -1407,8 +1470,9 @@ retry_mutex_inval_insert:
 
     if( sync_var & MASK_INVALIDATE )
     {
+#ifdef NOT_CRITICAL_BUT
         printk("%s: [ERRORE PUT DATA - INSERIMENTO HT + SORTED] (%d) E' in corso un'invalidazione, attendere...\n", MOD_NAME, n);
-
+#endif
         mutex_unlock(&inval_insert_mutex);
 
         wait_event_interruptible(the_queue, (sync_var & MASK_INVALIDATE) == 0 );
@@ -1421,7 +1485,9 @@ retry_mutex_inval_insert:
     /* Comunico la presenza del thread che effettuerà l'inserimento di un nuovo blocco */
     __sync_fetch_and_add(&sync_var,1);
 
+#ifdef NOT_CRITICAL_BUT
     printk("%s: [PUT DATA - INSERIMENTO HT + SORTED] Segnalata la presenza per l'inserimento del blocco %lld\n", MOD_NAME, index);
+#endif
 
     mutex_unlock(&inval_insert_mutex);
 
@@ -1458,12 +1524,16 @@ retry_insert_ht:
 
     if(!ret)
     {
+#ifdef NOT_CRITICAL_BUT
         printk("%s: [ERRORE PUT DATA - INSERIMENTO HT + SORTED] Conflitto inserimento in testa nella lista #%d della HT\n", MOD_NAME, num_entry_ht);
+#endif
         n++;
         goto retry_insert_ht;
     }
 
+#ifdef NOT_CRITICAL
     printk("%s: [PUT DATA - INSERIMENTO HT + SORTED] Inserimento blocco %lld nella entry #%d della HT completato con successo.\n", MOD_NAME, index, num_entry_ht);
+#endif
 
     ret = insert_sorted_list_conc(new_item);            /* Inserimento del blocco nella lista ordinata */
 
@@ -1484,7 +1554,9 @@ retry_insert_ht:
 
     wake_up_interruptible(&the_queue);
 
+#ifdef NOT_CRITICAL
     printk("%s: [PUT DATA - INSERIMENTO HT + SORTED] Inserimento blocco %lld nella sorted list avvenuto con successo\n", MOD_NAME, index);
+#endif
 
     return 0;    
 }
@@ -1549,7 +1621,9 @@ static int insert_hash_table_valid_and_sorted_list(char *data_block_msg, uint64_
         new_item->hash_table_next = old_head;
     }
 
+#ifdef NOT_CRITICAL
     printk("%s: [INIZIALIZZAZIONE CORE - HT + SORTED] Inserimento blocco %lld nella entry #%d completato con successo.\n", MOD_NAME, index, num_entry_ht);
+#endif
 
     /* Inserimento del blocco nella lista ordinata */
     insert_sorted_list(new_item);
@@ -1617,8 +1691,9 @@ int init_ht_valid_and_sorted_list(uint64_t num_data_block) //
             return 1;
         }
 
+#ifdef NOT_CRITICAL_BUT
         printk("%s: [INIZIALIZZAZIONE CORE - HT + SORTED] Il blocco di dati con indice %lld è valido e nella lista ordinata si trova in posizione %lld.\n", MOD_NAME, index, data_block->pos);
-
+#endif
         brelse(bh);        
         
     }

@@ -85,7 +85,9 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
     unsigned long my_epoch;
     int index;
     
+#ifdef LOG
     LOG_SYSTEM_CALL("GET_DATA", "get_data");
+#endif
     
     ret = check_is_mounted();                                   /* verifico se il file system su cui si deve operare è stato effettivamente montato */
 
@@ -113,7 +115,9 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
     /* Verifico se il blocco richiesto è valido */
     if(!check_bit(offset))
     {
+#ifdef NOT_CRITICAL_BUT
         printk("%s: [ERRORE GET DATA] E' stata richiesta la lettura del blocco %lld ma il blocco non è valido\n", MOD_NAME, offset);
+#endif
 
         index = (my_epoch & MASK) ? 1 : 0;
 
@@ -134,7 +138,9 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
 
     if(msg_block == NULL)
     {
+#ifdef NOT_CRITICAL
         printk("%s: [ERRORE GET DATA] La lettura del blocco %lld è terminata con insuccesso\n", MOD_NAME, offset);
+#endif
         return -ENODATA;
     }
 
@@ -166,14 +172,14 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
             msg_block[byte_copy-1] = '\0';
         }
       
-    }    
-
-    //printk("%s: [GET DATA] Numero di bytes che verranno effettivamente restituiti è %ld\n", MOD_NAME, byte_copy);
+    }
     
     byte_ret = copy_to_user(destination, msg_block, byte_copy);
 
+#ifdef NOT_CRITICAL_BUT
     printk("%s: [GET DATA] Il messaggio del blocco %lld è stato consegnato con successo\n", MOD_NAME, offset);
-    
+#endif
+
     return (byte_copy - byte_ret);
 	
 }
@@ -200,7 +206,9 @@ asmlinkage uint64_t sys_put_data(char * source, size_t size){
     struct buffer_head *bh;
     struct soafs_block *b;
 
+#ifdef LOG
     LOG_SYSTEM_CALL("PUT_DATA", "put_data");
+#endif
 
     ret = check_is_mounted();   /* verifico se il file system su cui si deve operare è stato effettivamente montato */
 
@@ -224,7 +232,9 @@ asmlinkage uint64_t sys_put_data(char * source, size_t size){
      */
     if( (head_free_block_list == NULL) && (num_block_free_used == sbi->num_block_free) )
     {
+#ifdef NOT_CRITICAL_BUT
         printk("%s: [ERRORE PUT DATA] Non ci sono più blocchi liberi da utilizzare\n", MOD_NAME);
+#endif
         return -ENOMEM;
     }
 
@@ -278,7 +288,9 @@ retry:
          */
         if( (head_free_block_list == NULL) && (num_block_free_used == sbi->num_block_free) )
         {
+#ifdef NOT_CRITICAL_BUT
                 printk("%s: [ERRORE PUT DATA] Non ci sono più blocchi liberi da utilizzare\n", MOD_NAME);
+#endif
                 return -ENOMEM;
         }
 
@@ -288,7 +300,9 @@ retry:
          */
         if( (head_free_block_list == NULL) && (num_block_free_used < sbi->num_block_free))
         {
+#ifdef NOT_CRITICAL
             printk("%s: [ERRORE PUT DATA] Tentativo #%d fallito per il recupero dei blocchi liberi\n", MOD_NAME, n);
+#endif
             n++;
             goto retry;
         }
@@ -300,13 +314,17 @@ retry:
     
     if(item == NULL)
     {
+#ifdef NOT_CRITICAL_BUT
         printk("%s: [ERRORE PUT DATA] Errore nel recupero di un blocco libero\n", MOD_NAME);
+#endif
         return -ENOMEM;
     }
 
     index = item -> block_index;
 
+#ifdef NOT_CRITICAL
     printk("%s: [PUT DATA] Indice del blocco libero da utilizzare - %lld\n", MOD_NAME, index);
+#endif
 
     /* Calcolo i byte effettivi del messaggio da scrivere nel blocco */
 
@@ -350,7 +368,9 @@ retry:
 
     bytes_ret = copy_from_user(msg, source, bytes_to_copy);
 
+#ifdef NOT_CRITICAL
     printk("[PUT DATA] Numero di bytes non copiati da user space - %ld\n", bytes_ret);
+#endif
 
     if(bytes_to_copy!=msg_size)
     {
@@ -358,13 +378,17 @@ retry:
         msg[msg_size - 1] = '\0';
     }
 
+#ifdef NOT_CRITICAL
     printk("%s: [PUT DATA] E' stato richiesto di scrivere il messaggio '%s'", MOD_NAME, msg);
+#endif
 
     ret = insert_hash_table_valid_and_sorted_list_conc(msg, sbi->num_block, index, item);
 
     if(ret)
     {
+#ifdef NOT_CRITICAL_BUT
         printk("%s: [ERRORE PUT DATA] Errore nell'inserimento del nuovo blocco con indice %lld\n", MOD_NAME, index);
+#endif
         kfree(msg);
         return -ENOMEM;
     }
@@ -395,16 +419,14 @@ retry_get_device_block:
     mark_buffer_dirty(bh);
 
 #ifdef SYNC
-
     sync_dirty_buffer(bh);
-
-    printk("%s: [PUT DATA] Esecuzione sincrona flush dei dati\n", MOD_NAME);
-
 #endif
 
     brelse(bh);
 
+#ifdef NOT_CRITICAL
     printk("%s: [PUT DATA] Terminata esecuzione flush dei dati sul device\n", MOD_NAME);
+#endif
 
     /* Dealloco la struttura dati che rappresenta il blocco libero ottenuto in precedenza */
     kfree(item);
@@ -412,7 +434,9 @@ retry_get_device_block:
     /* Comunico che il blocco inserito risulta essere valido */
     set_bitmask(index, 1);    
 
+#ifdef NOT_CRITICAL_BUT
     printk("%s: [PUT DATA] Il messaggio '%s' è stato inserito con successo nel blocco %lld\n", MOD_NAME, msg, index);
+#endif
 
     return index;
 	
@@ -429,7 +453,9 @@ asmlinkage int sys_invalidate_data(uint64_t offset){
     int ret;
     struct soafs_sb_info *sbi;
 
+#ifdef LOG
     LOG_SYSTEM_CALL("INVALIDATE DATA", "invalidate_data");
+#endif
 
     ret = check_is_mounted();
 
@@ -454,7 +480,9 @@ asmlinkage int sys_invalidate_data(uint64_t offset){
      */
     if(!check_bit(offset))
     {
+#ifdef NOT_CRITICAL
         printk("%s: [ERRORE INVALIDATE DATA] E' stata richiesta l'invalidazione del blocco %lld ma il blocco non è valido\n", MOD_NAME, offset);
+#endif
         return -ENODATA;
     }
 
@@ -463,11 +491,15 @@ asmlinkage int sys_invalidate_data(uint64_t offset){
 
     if(ret)
     {
-        printk("%s: [ERRORE INVALIDATE DATA] L'invalidazione del blocco %lld non è stata eseguita con successo\n", MOD_NAME, offset);        
+#ifdef NOT_CRITICAL_BUT
+        printk("%s: [ERRORE INVALIDATE DATA] L'invalidazione del blocco %lld non è stata eseguita con successo\n", MOD_NAME, offset);  
+#endif      
         return -ENODATA;
     }
 
+#ifdef NOT_CRITICAL_BUT
     printk("%s: [INVALIDATE DATA] L'invalidazione del blocco %lld è stata eseguita con successo\n", MOD_NAME, offset);
+#endif
 
     return 0;
 	
