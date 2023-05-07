@@ -108,7 +108,7 @@ void debugging_init(void) //
  * logaritmico di elementi per ogni lista della
  * hast_table_valid.
  */
-void compute_num_rows(uint64_t num_data_block) //
+void compute_num_rows(uint64_t num_data_block)
 {
     int list_len;
     
@@ -160,9 +160,11 @@ char * read_data_block(uint64_t offset, struct ht_valid_entry *entry)
 
     if(item == NULL)
     {
-#ifdef NOT_CRITICAL_BUT
+
+#ifdef NOT_CRITICAL_BUT_GET
         printk("%s: [ERRORE GET DATA] Il blocco richiesto %lld è stato invalidato in concorrenza\n", MOD_NAME, offset);
 #endif
+
         return NULL;
     }
     
@@ -773,7 +775,7 @@ struct block_free * get_freelist_head(void)
 
 retry_freelist_head:
 
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_PUT
     printk("%s: [PUT DATA - GET HEAD FREE LIST] Tentativo #%d di recupero del blocco in testa alla lista\n", MOD_NAME, n);
 #endif
 
@@ -782,7 +784,7 @@ retry_freelist_head:
     /* Gestione di molteplici scritture concorrenti */
     if(old_head == NULL)
     {
-#ifdef NOT_CRITICAL_BUT
+#ifdef NOT_CRITICAL_BUT_PUT
         printk("%s: [ERRORE PUT DATA - GET HEAD FREE LIST] La lista risulta essere attualmente vuota al tentativo #%d\n", MOD_NAME, n);
 #endif
         return NULL;
@@ -800,7 +802,7 @@ retry_freelist_head:
             return NULL;
         }
 
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_PUT
         printk("%s: ERRORE PUT DATA - GET HEAD FREE LIST Conflitto nel determinare il blocco\n", MOD_NAME);
 #endif
     
@@ -813,7 +815,7 @@ retry_freelist_head:
 
 
 /*
- * Questa funzione ha il coompiti di verificare la validità
+ * Questa funzione ha il compito di verificare la validità
  * del blocco il cui indice è passato come parametro.
  */
 int check_bit(uint64_t index)
@@ -842,13 +844,15 @@ int check_bit(uint64_t index)
 
     if(bitmask[bitmask_entry][array_entry] & (base << offset))
     {
-#ifdef NOT_CRITICAL
+
+#ifdef NOT_CRITICAL_INIT
         printk("%s: [CHECK BIT BITMASK] Il blocco di dati ad offset %lld è valido.\n", MOD_NAME, index);
 #endif
+
         return 1;
     }
 
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_INIT
     printk("%s: [CHECK BIT BITMASK] Il blocco di dati ad offset %lld non è valido.\n", MOD_NAME, index);
 #endif
     
@@ -893,9 +897,11 @@ int get_bitmask_block(void)
 
     if( (head_free_block_list != NULL) || (num_block_free_used == sbi->num_block_free))
     {
-#ifdef NOT_CRITICAL_BUT
+
+#ifdef NOT_CRITICAL_BUT_PUT
         printk("%s: [PUT DATA - RECUPERO BLOCCHI] I blocchi sono stati già determinati o invalidati\n", MOD_NAME);
 #endif
+
         return 0;
     }
 
@@ -917,7 +923,7 @@ int get_bitmask_block(void)
      */
     for(index = pos; index<num_block_data; index++)
     {
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_PUT
         printk("%s: [PUT DATA - RECUPERO BLOCCHI] Verifica della validità del blocco con indice %lld\n", MOD_NAME, index);
 #endif
         ret = check_bit(index);
@@ -947,15 +953,17 @@ retry:
 
             if(!ret)
             {
-#ifdef NOT_CRITICAL_BUT
+
+#ifdef NOT_CRITICAL_BUT_PUT
                     printk("%s: [ERRORE PUT DATA - RECUPERO BLOCCHI] Errore inserimento del blocco in concorrenza\n", MOD_NAME);
 #endif
+
                     goto retry;
             }
 
             pos = index + 1;
 
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_PUT
             printk("%s: [PUT DATA - RECUPERO BLOCCHI] Il nuovo valore di pos è pari a %lld\n", MOD_NAME, pos);
 #endif
 
@@ -974,7 +982,7 @@ retry:
             if( (num_block_free_used == sbi->num_block_free)  || (count == 0) )
             {
 
-#ifdef NOT_CRITICAL_BUT
+#ifdef NOT_CRITICAL_BUT_PUT
                 if(num_block_free_used == sbi->num_block_free)
                 {
                     printk("%s: [PUT DATA - RECUPERO BLOCCHI] Ho esaurito il numero di blocchi liberi totali\n", MOD_NAME);
@@ -1003,7 +1011,7 @@ retry:
  * alcun ordine tra i blocchi liberi. Questa funzione non viene eseguita
  * in concorrenza.
  */
-int insert_free_list(uint64_t index) //
+int insert_free_list(uint64_t index)
 {
     struct block_free *new_item;
     struct block_free *old_head;
@@ -1030,7 +1038,7 @@ int insert_free_list(uint64_t index) //
         head_free_block_list -> next = old_head;
     }
 
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_INIT
     printk("%s: [INIZIALIZZAZIONE CORE - FREE LIST] Inserito il blocco %lld nella lista dei blocchi liberi.\n", MOD_NAME, index);
 #endif
 
@@ -1062,9 +1070,11 @@ int init_free_block_list(uint64_t *index_free, uint64_t actual_size) //
 
     for(index=0; index<actual_size;index++)
     {
-#ifdef NOT_CRITICAL
+
+#ifdef NOT_CRITICAL_INIT
         printk("%s: [INIZIALIZZAZIONE CORE - FREE LIST] Inserimento del blocco %lld all'interno della lista in corso...\n", MOD_NAME, index_free[index]);
 #endif
+
         ret = insert_free_list(index_free[index]);
 
         if(ret)
@@ -1084,9 +1094,11 @@ int init_free_block_list(uint64_t *index_free, uint64_t actual_size) //
 
             return 1;
         }
-#ifdef NOT_CRITICAL
+
+#ifdef NOT_CRITICAL_INIT
         printk("%s: [INIZIALIZZAZIONE CORE - FREE LIST] Blocco #%lld inserito correttamente all'interno della lista\n", MOD_NAME, index_free[index]); 
-#endif       
+#endif    
+   
     }
 
     num_block_free_used = actual_size;
@@ -1241,7 +1253,7 @@ no_empty:
  * Osservo che l'esecuzione di questa funzione avviene in
  * assenza di concorrenza.
  */
-void insert_sorted_list(struct block *block) //
+void insert_sorted_list(struct block *block)
 {
     struct block *prev;
     struct block *curr;
@@ -1566,9 +1578,9 @@ retry_insert_ht:
 
 /*
  * Inserisce un nuovo elemento all'interno della lista
- * identificata dal parametro 'x'.
+ * corretta nella HT e nella lista ordinata.
  */
-static int insert_hash_table_valid_and_sorted_list(char *data_block_msg, uint64_t pos, uint64_t index) //
+static int insert_hash_table_valid_and_sorted_list(char *data_block_msg, uint64_t pos, uint64_t index)
 {
     int num_entry_ht;
     size_t len;
@@ -1621,7 +1633,7 @@ static int insert_hash_table_valid_and_sorted_list(char *data_block_msg, uint64_
         new_item->hash_table_next = old_head;
     }
 
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_INIT
     printk("%s: [INIZIALIZZAZIONE CORE - HT + SORTED] Inserimento blocco %lld nella entry #%d completato con successo.\n", MOD_NAME, index, num_entry_ht);
 #endif
 
@@ -1635,7 +1647,7 @@ static int insert_hash_table_valid_and_sorted_list(char *data_block_msg, uint64_
 
 
 
-int init_ht_valid_and_sorted_list(uint64_t num_data_block) //
+int init_ht_valid_and_sorted_list(uint64_t num_data_block)
 {
     uint64_t index;
     int isValid;
@@ -1649,14 +1661,16 @@ int init_ht_valid_and_sorted_list(uint64_t num_data_block) //
     if(sbi->num_block_free > sbi->num_block)
     {
         printk("%s: [ERRORE INIZIALIZZAZIONE CORE - HT + SORTED] Numero di blocchi liberi maggiore del numero dei blocchi totale\n", MOD_NAME);
+
         return 1;
     }
     
     if(sbi->num_block_free == sbi->num_block)
     {
         printk("%s: [INIZIALIZZAZIONE CORE - HT + SORTED] Non ci sono blocchi attualmente validi\n", MOD_NAME);
-        //tail_sorted_list = NULL;
+
         head_sorted_list = NULL;
+
         return 0;
     }
 
@@ -1691,7 +1705,7 @@ int init_ht_valid_and_sorted_list(uint64_t num_data_block) //
             return 1;
         }
 
-#ifdef NOT_CRITICAL_BUT
+#ifdef NOT_CRITICAL_BUT_INIT
         printk("%s: [INIZIALIZZAZIONE CORE - HT + SORTED] Il blocco di dati con indice %lld è valido e nella lista ordinata si trova in posizione %lld.\n", MOD_NAME, index, data_block->pos);
 #endif
         brelse(bh);        
@@ -1795,6 +1809,8 @@ int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint
     }else
     {
         num_block_free_used = 0;
+
+        pos = 0;
 
         head_free_block_list = NULL;
     }

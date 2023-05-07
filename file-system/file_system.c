@@ -90,6 +90,7 @@ static int set_free_block(void)
     if(bh == NULL)
     {
         printk("%s: [ERRORE FREE BLOCK] La lettura del superblocco è terminata senza successo\n", MOD_NAME);
+        kfree(free_blocks);
         return 1;
     }
 
@@ -131,7 +132,7 @@ static int set_free_block(void)
 
         if(!ret)
         {
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_INIT
             printk("%s: [SMONTAGGIO - SET FREE BLOCK] Blocco libero #%lld\n", MOD_NAME, index);
 #endif
             if(counter < update_list_size)
@@ -213,7 +214,7 @@ int flush_bitmask(void)
 
         sync_dirty_buffer(bh);
 
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_INIT
         printk("%s: [SMONTAGGIO - FLUSH BITMASK] Flush dei dati per il blocco di stato #%lld avvenuto con successo\n", MOD_NAME, counter);        
 #endif
         counter++;
@@ -259,7 +260,7 @@ int flush_valid_block(void)
     while(curr != NULL)
     {
         index = curr->block_index;
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_INIT
         printk("%s: [SMONTAGGIO - FLUSH VALID BLOCK]  Il blocco con indice %lld deve essere riportato su device\n", MOD_NAME, index);
 #endif
         bh = sb_bread(sb_global, 2 + num_block_state + index);
@@ -312,13 +313,13 @@ void free_all_memory(void)
         {
             next_bf = head_free_block_list->next;
 
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_INIT
             printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione blocco #%lld...\n", MOD_NAME, head_free_block_list->block_index);
 #endif
 
             kfree(head_free_block_list);
 
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_INIT
             printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione blocco #%lld avvenuta con successo\n", MOD_NAME, head_free_block_list->block_index);
 #endif
 
@@ -344,13 +345,13 @@ void free_all_memory(void)
         {
             next_b = head_sorted_list->sorted_list_next;
 
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_INIT
             printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione blocco #%lld...\n", MOD_NAME, head_sorted_list->block_index);
 #endif
 
             kfree(head_sorted_list);
 
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_INIT
             printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione blocco #%lld avvenuta con successo\n", MOD_NAME, head_sorted_list->block_index);
 #endif
 

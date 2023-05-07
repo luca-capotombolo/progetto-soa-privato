@@ -115,7 +115,8 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
     /* Verifico se il blocco richiesto è valido */
     if(!check_bit(offset))
     {
-#ifdef NOT_CRITICAL_BUT
+
+#ifdef NOT_CRITICAL_BUT_GET
         printk("%s: [ERRORE GET DATA] E' stata richiesta la lettura del blocco %lld ma il blocco non è valido\n", MOD_NAME, offset);
 #endif
 
@@ -138,9 +139,11 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
 
     if(msg_block == NULL)
     {
-#ifdef NOT_CRITICAL
+
+#ifdef NOT_CRITICAL_GET
         printk("%s: [ERRORE GET DATA] La lettura del blocco %lld è terminata con insuccesso\n", MOD_NAME, offset);
 #endif
+
         return -ENODATA;
     }
 
@@ -151,7 +154,7 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
         /*
         * Se la quantità di dati che mi stai chiedendo
         * è strettamente maggiore della dimensione del
-        * messaggio che deve essere restituit, allora ti
+        * messaggio che deve essere restituito, allora ti
         * restituisco l'intero contenuto del messaggio. Il
         * terminatore di stringa è già presente nel blocco.
         */
@@ -176,7 +179,7 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
     
     byte_ret = copy_to_user(destination, msg_block, byte_copy);
 
-#ifdef NOT_CRITICAL_BUT
+#ifdef NOT_CRITICAL_BUT_GET
     printk("%s: [GET DATA] Il messaggio del blocco %lld è stato consegnato con successo\n", MOD_NAME, offset);
 #endif
 
@@ -232,9 +235,11 @@ asmlinkage uint64_t sys_put_data(char * source, size_t size){
      */
     if( (head_free_block_list == NULL) && (num_block_free_used == sbi->num_block_free) )
     {
-#ifdef NOT_CRITICAL_BUT
+
+#ifdef NOT_CRITICAL_BUT_PUT
         printk("%s: [ERRORE PUT DATA] Non ci sono più blocchi liberi da utilizzare\n", MOD_NAME);
 #endif
+
         return -ENOMEM;
     }
 
@@ -288,9 +293,11 @@ retry:
          */
         if( (head_free_block_list == NULL) && (num_block_free_used == sbi->num_block_free) )
         {
-#ifdef NOT_CRITICAL_BUT
+
+#ifdef NOT_CRITICAL_BUT_PUT
                 printk("%s: [ERRORE PUT DATA] Non ci sono più blocchi liberi da utilizzare\n", MOD_NAME);
 #endif
+
                 return -ENOMEM;
         }
 
@@ -300,9 +307,11 @@ retry:
          */
         if( (head_free_block_list == NULL) && (num_block_free_used < sbi->num_block_free))
         {
-#ifdef NOT_CRITICAL
+
+#ifdef NOT_CRITICAL_PUT
             printk("%s: [ERRORE PUT DATA] Tentativo #%d fallito per il recupero dei blocchi liberi\n", MOD_NAME, n);
 #endif
+
             n++;
             goto retry;
         }
@@ -314,9 +323,11 @@ retry:
     
     if(item == NULL)
     {
-#ifdef NOT_CRITICAL_BUT
+
+#ifdef NOT_CRITICAL_BUT_PUT
         printk("%s: [ERRORE PUT DATA] Errore nel recupero di un blocco libero\n", MOD_NAME);
 #endif
+
         return -ENOMEM;
     }
 
@@ -356,19 +367,21 @@ retry:
 
     }
 
+retry_kmalloc_put:
 
     /* Alloco la memoria per ospitare il messaggio proveniente dallo spazio utente */
-    msg = (char *)kmalloc(msg_size, GFP_KERNEL);
+    msg = (char *)kzalloc(msg_size, GFP_KERNEL);
 
     if(msg == NULL)
     {
         LOG_KMALLOC_ERR("ERRORE PUT DATA");
-        return -EIO;    
+        
+        goto retry_kmalloc_put;
     }
 
     bytes_ret = copy_from_user(msg, source, bytes_to_copy);
 
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_PUT
     printk("[PUT DATA] Numero di bytes non copiati da user space - %ld\n", bytes_ret);
 #endif
 
@@ -378,7 +391,7 @@ retry:
         msg[msg_size - 1] = '\0';
     }
 
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_PUT
     printk("%s: [PUT DATA] E' stato richiesto di scrivere il messaggio '%s'", MOD_NAME, msg);
 #endif
 
@@ -386,7 +399,7 @@ retry:
 
     if(ret)
     {
-#ifdef NOT_CRITICAL_BUT
+#ifdef NOT_CRITICAL_BUT_PUT
         printk("%s: [ERRORE PUT DATA] Errore nell'inserimento del nuovo blocco con indice %lld\n", MOD_NAME, index);
 #endif
         kfree(msg);
@@ -424,7 +437,7 @@ retry_get_device_block:
 
     brelse(bh);
 
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_PUT
     printk("%s: [PUT DATA] Terminata esecuzione flush dei dati sul device\n", MOD_NAME);
 #endif
 
@@ -434,7 +447,7 @@ retry_get_device_block:
     /* Comunico che il blocco inserito risulta essere valido */
     set_bitmask(index, 1);    
 
-#ifdef NOT_CRITICAL_BUT
+#ifdef NOT_CRITICAL_BUT_PUT
     printk("%s: [PUT DATA] Il messaggio '%s' è stato inserito con successo nel blocco %lld\n", MOD_NAME, msg, index);
 #endif
 
