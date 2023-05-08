@@ -8,15 +8,14 @@
 
 ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t * off) {
 
-    struct block *curr;
+    int index;
     size_t bytes_copied;                /* Numero di bytes dei messaggi che sono stati già copiati */
     size_t byte_to_copy_iter;           /* Numero di bytes che devono essere copiati nella iterazione corrente */
     size_t len_msg;                     /* Dimensione del messaggio su cui si sta attualmente iteranod */
     char *msg_to_copy;                  /* Messaggio che deve essere restituito al'utente */
     unsigned long ret;
-    //grace period
     unsigned long my_epoch;
-    int index;
+    struct block *curr;
     
     printk("%s: [READ DRIVER] E' stata invocata la funzione di lettura con la dimensione richiesta pari a %ld.", MOD_NAME, len);
 
@@ -174,8 +173,6 @@ struct dentry *onefilefs_lookup(struct inode *parent_inode, struct dentry *child
     struct buffer_head *bh = NULL;
     struct inode *the_inode = NULL;
 
-    //printk("%s: E' stata invocata la funzione di lookup per '%s'",MOD_NAME,child_dentry->d_name.name);
-
     if(!strcmp(child_dentry->d_name.name, SOAFS_UNIQUE_FILE_NAME)){
 	
         the_inode = iget_locked(sb, 1);
@@ -187,7 +184,6 @@ struct dentry *onefilefs_lookup(struct inode *parent_inode, struct dentry *child
 
 	    if(!(the_inode->i_state & I_NEW))
         {
-            //printk("%s: L'inode dell'unico file è presente all'interno della cache.", MOD_NAME);
 		    return child_dentry;
 	    }
 
@@ -196,10 +192,8 @@ struct dentry *onefilefs_lookup(struct inode *parent_inode, struct dentry *child
         the_inode->i_fop = &soafs_file_operations;
 	    the_inode->i_op = &soafs_inode_ops;
 
-	    //just one link for this file
 	    set_nlink(the_inode,1);
 
-	    //now we retrieve the file size via the FS specific inode, putting it into the generic inode
     	bh = (struct buffer_head *)sb_bread(sb, SOAFS_INODE_BLOCK_NUMBER);
 
     	if(bh==NULL)

@@ -437,13 +437,13 @@ retry_house_keeper:
     {
         mutex_unlock(&inval_insert_mutex);
 
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_HK
         printk("%s: [HOUSE KEEPER] Il thread demone viene messo in attesa\n", MOD_NAME);
 #endif
 
         wait_event_interruptible(the_queue, (sync_var & MASK_NUMINSERT) == 0);
 
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_HK
         printk("%s: [HOUSE KEEPER] Il thread demone riprende l'esecuzione\n", MOD_NAME);
 #endif
         goto retry_house_keeper;
@@ -486,7 +486,7 @@ retry_house_keeper:
     grace_period_threads_ht = last_epoch_ht & (~MASK);
     grace_period_threads_sorted = last_epoch_sorted & (~MASK);
 
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_HK
     printk("%s: [HOUSE KEEPER] Attesa della terminazione del grace period HT: #threads %ld\n", MOD_NAME, grace_period_threads_ht);
     printk("%s: [HOUSE KEEPER] Attesa della terminazione del grace period lista ordinata: #threads %ld\n", MOD_NAME, grace_period_threads_sorted);
 #endif
@@ -495,7 +495,7 @@ sleep_again:
 
     wait_event_interruptible(the_queue, (gp->standing_ht[index_ht] >= grace_period_threads_ht) && (gp->standing_sorted[index_sorted] >= grace_period_threads_sorted));
 
-#ifdef NOT_CRITICAL_BUT
+#ifdef NOT_CRITICAL_BUT_HK
     printk("%s: gp->standing_ht[index_ht] = %ld\tgrace_period_threads_ht = %ld\tgp->standing_sorted[index_sorted] = %ld\tgrace_period_threads_sorted = %ld\n", MOD_NAME, gp->standing_ht[index_ht], grace_period_threads_ht, gp->standing_sorted[index_sorted], grace_period_threads_sorted);
 #endif
 

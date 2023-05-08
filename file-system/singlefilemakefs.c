@@ -53,6 +53,12 @@ int main(int argc, char *argv[])
 
     actual_size = atoi(argv[4]);
 
+    if(SIZE_INIT > 506)
+    {
+        printf("Il valore di SIZE_INIT non può essere maggiore di 506\n");
+        return -1;
+    }
+
     /*
      * Verifico se si sta chiedendo di caricare
      * nella lista dei blocchi liberi un numero
@@ -93,17 +99,16 @@ int main(int argc, char *argv[])
     /* Computo il numero dei blocchi di dati. */
     nblocks_data = nblocks - 2;
 
+    if(SIZE_INIT > nblocks_data)
+    {
+        printf("Il valore di SIZE_INIT è maggiore del numero dei blocchi di dati\n");
+        return -1;
+    }
+
     if(actual_size > nblocks_data)
     {
         printf("Si sta richiedendo un array con una dimensione maggiore del numero massimo dei blocchi di dati\n");
         printf("Il valore di actual_size > nblocks\n");
-        return -1;
-    }
-
-    if(SIZE_INIT > nblocks_data)
-    {
-        printf("La dimensione massima dell'array è maggiore del numero massimo dei blocchi di dati\n");
-        printf("Il valore di SIZE_INIT > nblocks\n");
         return -1;
     }
 
@@ -131,7 +136,8 @@ int main(int argc, char *argv[])
     /* Assumo che anche i blocchi di stato contino nel totale */
     if( (nblocks + nblocks_state) > NBLOCKS )
     {
-        printf("E' stato richiesto un numero di blocchi %ld scorretto.\nIl numero di blocchi non deve essere superiore a %d\n", nblocks + nblocks_state, NBLOCKS);
+        printf("E' stato richiesto un numero totale di blocchi pari a %ld.\n", nblocks + nblocks_state);
+        printf("Il numero di blocchi non deve essere superiore a %d\n", NBLOCKS);
         return -1;
     }
     

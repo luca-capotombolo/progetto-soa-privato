@@ -20,7 +20,7 @@ uint64_t sync_var = 0;                              /* Variabile per la sincroni
 
 
 
-void scan_free_list(void) //
+void scan_free_list(void)
 {
     struct block_free *curr;
 
@@ -39,7 +39,7 @@ void scan_free_list(void) //
 
 
 
-void scan_sorted_list(void) //
+void scan_sorted_list(void)
 {
     struct block *curr;
 
@@ -59,7 +59,7 @@ void scan_sorted_list(void) //
 
 
 
-void scan_hash_table(void) //
+void scan_hash_table(void)
 {
     int entry_num;
     struct ht_valid_entry entry;
@@ -88,7 +88,7 @@ void scan_hash_table(void) //
 
 
 
-void debugging_init(void) //
+void debugging_init(void)
 {
     /* scansione della lista contenente le informazioni dei blocchi liberi. */
     scan_free_list();
@@ -244,7 +244,8 @@ struct result_inval * remove_block(uint64_t index)
     /* Gestione di invalidazioni */
     if(curr == NULL)
     {
-#ifdef NOT_CRITICAL_BUT
+
+#ifdef NOT_CRITICAL_BUT_INVAL
         printk("%s: [ERRORE INVALIDATE DATA - REMOVE] La lista #%d nella HT risulta essere vuota\n", MOD_NAME, num_entry_ht);
 #endif
 
@@ -261,7 +262,7 @@ struct result_inval * remove_block(uint64_t index)
 
         asm volatile ("mfence");
 
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_INVAL
         printk("%s: [INVALIDATE DATA - REMOVE] Il blocco %lld richiesto per l'invalidazione è stato eliminato con successo dalla lista nella HT\n", MOD_NAME, index);
 #endif
 
@@ -280,7 +281,8 @@ struct result_inval * remove_block(uint64_t index)
     {
         if(curr->block_index == index)
         {
-#ifdef NOT_CRITICAL
+
+#ifdef NOT_CRITICAL_INVAL
             printk("%s: [INVALIDATE DATA - REMOVE] Il blocco %lld da invalidare è stato trovato con successo nella lista della HT\n", MOD_NAME, index);
 #endif
 
@@ -295,11 +297,15 @@ struct result_inval * remove_block(uint64_t index)
 
     if( curr == NULL )
     {
-#ifdef NOT_CRITICAL_BUT
+
+#ifdef NOT_CRITICAL_BUT_INVAL
         printk("%s: [ERRORE INVALIDATE DATA - REMOVE] Il blocco %lld richiesto per l'invalidazione non è presente nella lista #%d della HT\n", MOD_NAME, index, num_entry_ht);
 #endif
+
         res_inval->code = 2;
+
         res_inval->block = NULL;
+
         return res_inval;
     }
 
@@ -307,7 +313,7 @@ struct result_inval * remove_block(uint64_t index)
 
     asm volatile ("mfence");
 
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_INVAL
     printk("%s: [INVALIDAZIONE] Il blocco %lld richiesto per l'invalidazione è stato eliminato con successo dalla lista nella HT\n", MOD_NAME, index);
 #endif
 
@@ -340,7 +346,7 @@ remove_sorted_list:
 
         asm volatile ("mfence");
 
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_INVAL
         printk("%s: [INVALIDATE DATA - REMOVE] Il blocco %lld richiesto per l'invalidazione è stato eliminato con successo dalla lista ordinata\n", MOD_NAME, index);
 #endif
 
@@ -357,7 +363,8 @@ remove_sorted_list:
     {
         if(curr->block_index == index)
         {
-#ifdef NOT_CRITICAL
+
+#ifdef NOT_CRITICAL_INVAL
             printk("%s: [INVALIDATE DATA - REMOVE] Il blocco %lld da invalidare è stato trovato con successo nella lista ordinata\n", MOD_NAME, index);
 #endif
 
@@ -390,7 +397,7 @@ remove_sorted_list:
  
     asm volatile ("mfence");  
 
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_INVAL
     printk("%s: [INVALIDATE DATA - REMOVE] Il blocco %lld richiesto per l'invalidazione è stato eliminato con successo dalla lista ordinata\n", MOD_NAME, index);
 #endif
     
@@ -451,7 +458,7 @@ retry_invalidate:
     /* Recupero il numero di inserimenti in corso */
     num_insert = sync_var & MASK_NUMINSERT;
 
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_INVAL
     printk("%s: [INVALIDATE DATA] Il numero di inserimenti attualmente in corso è pari a %lld\n", MOD_NAME, num_insert);
 #endif
 
@@ -459,7 +466,7 @@ retry_invalidate:
     {
         mutex_unlock(&inval_insert_mutex);
 
-#ifdef NOT_CRITICAL_BUT
+#ifdef NOT_CRITICAL_BUT_INVAL
         printk("%s: [ERRORE INVALIDATE DATA] L'invalidazione del blocco %lld non è stata effettuata al tentativo #%d\n", MOD_NAME, index, n);
 
         printk("%s: [ERRORE INVALIDATE DATA] Il thread per l'invalidazione del blocco %lld viene messo in attesa\n", MOD_NAME, index);
@@ -469,7 +476,7 @@ retry_invalidate:
 
         n++;
 
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_INVAL
         printk("%s: [ERRORE INVALIDATE DATA] Nuovo tentativo #%d di invalidazione del blocco %lld\n", MOD_NAME, n, index);
 #endif
 
@@ -537,7 +544,7 @@ retry_invalidate:
     grace_period_threads_ht = last_epoch_ht & (~MASK);
     grace_period_threads_sorted = last_epoch_sorted & (~MASK);
 
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_INVAL
     printk("%s: [INVALIDATE DATA] Attesa della terminazione del grace period HT: #threads %ld\n", MOD_NAME, grace_period_threads_ht);
     printk("%s: [INVALIDATE DATA] Attesa della terminazione del grace period lista ordinata: #threads %ld\n", MOD_NAME, grace_period_threads_sorted);
 #endif
@@ -546,7 +553,7 @@ sleep_again:
 
     wait_event_interruptible(the_queue, (gp->standing_ht[index_ht] >= grace_period_threads_ht) && (gp->standing_sorted[index_sorted] >= grace_period_threads_sorted));
 
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_INVAL
     printk("%s: gp->standing_ht[index_ht] = %ld\tgrace_period_threads_ht = %ld\tgp->standing_sorted[index_sorted] = %ld\tgrace_period_threads_sorted = %ld\n", MOD_NAME, gp->standing_ht[index_ht], grace_period_threads_ht, gp->standing_sorted[index_sorted], grace_period_threads_sorted);
 #endif
 
@@ -565,9 +572,11 @@ sleep_again:
         free_index_block = res_inval->block->block_index;
 
         kfree(res_inval->block);
-#ifdef NOT_CRITICAL
+
+#ifdef NOT_CRITICAL_INVAL
         printk("%s: [INVALIDATE DATA] Deallocazione del blocco %lld eliminato con successo\n", MOD_NAME, index);
 #endif
+
     }
 
 retry_kmalloc_invalidate_block:
@@ -1054,7 +1063,7 @@ int insert_free_list(uint64_t index)
  * Questa funzione ha il compito di inizializzare la lista contenente
  * gli indici dei blocchi liberi.
  */
-int init_free_block_list(uint64_t *index_free, uint64_t actual_size) //
+int init_free_block_list(uint64_t *index_free, uint64_t actual_size)
 {
     uint64_t index;
     uint64_t roll_index;
@@ -1187,14 +1196,14 @@ int insert_sorted_list_conc(struct block *block)
 
         if(!ret)
         {
-#ifdef NOT_CRITICAL_BUT
+#ifdef NOT_CRITICAL_BUT_PUT
             printk("%s: [ERRORE PUT DATA - INSERIMENTO HT + SORTED] L'inserimento in coda non è stato eseguito poiché la lista non è più vuota\n", MOD_NAME);
 #endif
             n++;
             goto no_empty;        
         }
 
-#ifdef NOT_CRITICAL_BUT
+#ifdef NOT_CRITICAL_BUT_PUT
         printk("%s: [PUT DATA - INSERIMENTO HT + SORTED] Inserimento in coda nella lista ordinata effettuato con successo per il blocco %lld\n", MOD_NAME, block->block_index);
 #endif    
         return 0;
@@ -1226,14 +1235,14 @@ no_empty:
 
     if(!ret)
     {
-#ifdef NOT_CRITICAL_BUT
+#ifdef NOT_CRITICAL_BUT_PUT
         printk("%s: [ERRORE PUT DATA - INSERIMENTO HT + SORTED] Tentativo di inserimento #%d del blocco %lld terminato senza successo\n", MOD_NAME, n, block->block_index);
 #endif
         n++;
         goto no_empty;
     }
 
-#ifdef NOT_CRITICAL_BUT
+#ifdef NOT_CRITICAL_BUT_PUT
     printk("%s: [PUT DATA - INSERIMENTO HT + SORTED] Inserimento in coda nella lista ordinata effettuato con successo per il blocco %lld al tentativo %d\n", MOD_NAME, block->block_index, n);
 #endif
 
@@ -1402,7 +1411,7 @@ no_head:
     {
         n++;
 
-#ifdef NOT_CRITICAL_BUT
+#ifdef NOT_CRITICAL_BUT_PUT
         printk("%s: [ERRORE PUT DATA - ROLLBACK] Tentativo #%d fallito nell'esecuzione della procedura di rollback\n", MOD_NAME, n);
 #endif
 
@@ -1456,6 +1465,9 @@ int insert_hash_table_valid_and_sorted_list_conc(char *data_block_msg, uint64_t 
     if(new_item == NULL)
     {
         printk("%s: [ERRORE PUT DATA - INSERIMENTO HT + SORTED] Errore esecuzione della kmalloc()\n", MOD_NAME);
+
+        rollback_insert_ht_sorted(item);
+
         return 1;
     }
 
@@ -1475,6 +1487,11 @@ retry_mutex_inval_insert:
     if(n > 10)
     {
         printk("%s: [ERRORE PUT DATA - INSERIMENTO HT + SORTED] Il numero massimo di tentativi %d per il blocco %lld è stato raggiunto\n", MOD_NAME, n, index);
+
+        kfree(new_item);
+
+        rollback_insert_ht_sorted(item);
+
         return 1;
     }
 
@@ -1482,7 +1499,7 @@ retry_mutex_inval_insert:
 
     if( sync_var & MASK_INVALIDATE )
     {
-#ifdef NOT_CRITICAL_BUT
+#ifdef NOT_CRITICAL_BUT_PUT
         printk("%s: [ERRORE PUT DATA - INSERIMENTO HT + SORTED] (%d) E' in corso un'invalidazione, attendere...\n", MOD_NAME, n);
 #endif
         mutex_unlock(&inval_insert_mutex);
@@ -1497,7 +1514,7 @@ retry_mutex_inval_insert:
     /* Comunico la presenza del thread che effettuerà l'inserimento di un nuovo blocco */
     __sync_fetch_and_add(&sync_var,1);
 
-#ifdef NOT_CRITICAL_BUT
+#ifdef NOT_CRITICAL_BUT_PUT
     printk("%s: [PUT DATA - INSERIMENTO HT + SORTED] Segnalata la presenza per l'inserimento del blocco %lld\n", MOD_NAME, index);
 #endif
 
@@ -1525,6 +1542,8 @@ retry_insert_ht:
          */
         wake_up_interruptible(&the_queue);
 
+        kfree(new_item);
+
         return 1;
     }
 
@@ -1536,14 +1555,14 @@ retry_insert_ht:
 
     if(!ret)
     {
-#ifdef NOT_CRITICAL_BUT
+#ifdef NOT_CRITICAL_BUT_PUT
         printk("%s: [ERRORE PUT DATA - INSERIMENTO HT + SORTED] Conflitto inserimento in testa nella lista #%d della HT\n", MOD_NAME, num_entry_ht);
 #endif
         n++;
         goto retry_insert_ht;
     }
 
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_PUT
     printk("%s: [PUT DATA - INSERIMENTO HT + SORTED] Inserimento blocco %lld nella entry #%d della HT completato con successo.\n", MOD_NAME, index, num_entry_ht);
 #endif
 

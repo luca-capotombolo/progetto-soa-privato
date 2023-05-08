@@ -333,7 +333,7 @@ retry:
 
     index = item -> block_index;
 
-#ifdef NOT_CRITICAL
+#ifdef NOT_CRITICAL_PUT
     printk("%s: [PUT DATA] Indice del blocco libero da utilizzare - %lld\n", MOD_NAME, index);
 #endif
 
@@ -367,8 +367,6 @@ retry:
 
     }
 
-retry_kmalloc_put:
-
     /* Alloco la memoria per ospitare il messaggio proveniente dallo spazio utente */
     msg = (char *)kzalloc(msg_size, GFP_KERNEL);
 
@@ -376,7 +374,9 @@ retry_kmalloc_put:
     {
         LOG_KMALLOC_ERR("ERRORE PUT DATA");
         
-        goto retry_kmalloc_put;
+        insert_free_list_conc(item);
+
+        return -EIO;
     }
 
     bytes_ret = copy_from_user(msg, source, bytes_to_copy);
@@ -399,10 +399,13 @@ retry_kmalloc_put:
 
     if(ret)
     {
+
 #ifdef NOT_CRITICAL_BUT_PUT
         printk("%s: [ERRORE PUT DATA] Errore nell'inserimento del nuovo blocco con indice %lld\n", MOD_NAME, index);
 #endif
+
         kfree(msg);
+
         return -ENOMEM;
     }
 
@@ -493,9 +496,11 @@ asmlinkage int sys_invalidate_data(uint64_t offset){
      */
     if(!check_bit(offset))
     {
-#ifdef NOT_CRITICAL
+
+#ifdef NOT_CRITICAL_INVAL
         printk("%s: [ERRORE INVALIDATE DATA] E' stata richiesta l'invalidazione del blocco %lld ma il blocco non è valido\n", MOD_NAME, offset);
 #endif
+
         return -ENODATA;
     }
 
@@ -504,13 +509,15 @@ asmlinkage int sys_invalidate_data(uint64_t offset){
 
     if(ret)
     {
-#ifdef NOT_CRITICAL_BUT
+
+#ifdef NOT_CRITICAL_BUT_INVAL
         printk("%s: [ERRORE INVALIDATE DATA] L'invalidazione del blocco %lld non è stata eseguita con successo\n", MOD_NAME, offset);  
-#endif      
+#endif   
+   
         return -ENODATA;
     }
 
-#ifdef NOT_CRITICAL_BUT
+#ifdef NOT_CRITICAL_BUT_INVAL
     printk("%s: [INVALIDATE DATA] L'invalidazione del blocco %lld è stata eseguita con successo\n", MOD_NAME, offset);
 #endif
 
