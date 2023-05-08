@@ -32,7 +32,7 @@
 /* Numero di Epoche */
 #define EPOCHS 2
 /* Numero di blocchi liberi con cui inizializzo la free_block_list */
-#define SIZE_INIT 5
+#define SIZE_INIT 10
 
 
 
