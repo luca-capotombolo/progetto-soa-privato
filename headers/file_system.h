@@ -31,7 +31,7 @@
 #define NBLOCKS 10000000
 /* Numero di Epoche */
 #define EPOCHS 2
-/* Numero di blocchi liberi con cui inizializzo la free_block_list */
+/* Numero massimo di blocchi liberi con cui inizializzo la free_block_list */
 #define SIZE_INIT 10
 
 

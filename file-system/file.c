@@ -121,12 +121,9 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
         curr = curr->sorted_list_next;
     }
 
-    msg_to_copy[bytes_copied - 1] = '\0';
-
-    if(curr == NULL)
+    if(bytes_copied > 0)
     {
-        /* Ho iterato su tutti i messaggi validi */
-        printk("%s: [READ DRIVER] Il contenuto del device è stato letto completamente con successo\n", MOD_NAME);
+        msg_to_copy[bytes_copied - 1] = '\0';
     }
 
     index = (my_epoch & MASK) ? 1 : 0;
