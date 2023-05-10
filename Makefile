@@ -50,3 +50,17 @@ umount-fs:
 
 umount-module:
 	sudo rmmod my_module
+
+create-test:
+	gcc ./test/full-test-conc.c -o full-test
+	gcc ./test/test-get.c -o get
+	gcc ./test/test-put.c -o put
+	gcc ./test/test-invalidate.c -o invalidate
+	gcc ./test/test.c -o simple-test
+
+rm-test:
+	rm full-test
+	rm get
+	rm put
+	rm invalidate
+	rm simple-test
