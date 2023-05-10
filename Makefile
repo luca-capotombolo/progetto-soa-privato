@@ -21,7 +21,6 @@ clean:
 	rm ./file-system/singlefilemakefs
 	rm ./file-system/parametri
 	rm ./file-system/image
-	rm ./file-system/image2
 
 get-param:
 	./file-system/parametri $(NBLOCKS_FS)
@@ -30,19 +29,12 @@ create-fs:
 	dd bs=4096 count=$(PARAM) if=/dev/zero of=./file-system/image
 	./file-system/singlefilemakefs ./file-system/image $(NBLOCKS_FS) $(UPDATE_LIST_SIZE) $(ACTUAL_SIZE)
 
-create-fs-2:
-	dd bs=4096 count=$(PARAM) if=/dev/zero of=./file-system/image2
-	./file-system/singlefilemakefs ./file-system/image2 $(NBLOCKS_FS) $(UPDATE_LIST_SIZE) $(ACTUAL_SIZE)
-
 mount-module:
 	insmod my_module.ko the_syscall_table=$(A)
 
 mount-fs:
 	mkdir ./file-system/mount
 	sudo mount -o loop,"./file-system/mount/" -t soafs ./file-system/image ./file-system/mount/
-
-mount-fs-2:
-	sudo mount -o loop,"./file-system/mount/" -t soafs ./file-system/image2 ./file-system/mount/
 
 umount-fs:
 	sudo umount ./file-system/mount/
