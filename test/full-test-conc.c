@@ -11,11 +11,13 @@
 
 #define _GNU_SOURCE
 
-#define NBLOCKS 50
+#define NBLOCKS 5000
 
 #define NTHREADS 10
 
-#define ITER 200
+#define ITER 100
+
+#define MSG_SIZE 4096
 
 
 
@@ -25,13 +27,34 @@
  * dei threads in modo da farli partire insieme per tentare
  * di incrementare la concorrenza.
  */
-uint64_t count_insert = 0;
-uint64_t count_inval = 0;
+uint64_t count = 0;
+int read_err = 0;
 int inval_err = 0;
 int insert_err = 0;
 int inval_ok = 0;
 int insert_ok = 0;
+int read_ok = 0;
 
+
+
+/*
+ * Questa funzione consente di invocare la system call get_data().
+ * Il parametro della funzione rappresenta l'indice del blocco che si
+ * vuole leggere.
+ */
+int get_data(uint64_t offset)
+{
+    int ret;
+
+    char msg[MSG_SIZE];
+
+    memset(msg, 0, MSG_SIZE);
+
+    ret = syscall(156, offset, msg, MSG_SIZE);
+    
+    return ret;
+
+}
 
 
 /*
@@ -46,23 +69,6 @@ int invalidate_data(uint64_t offset)
     ret = syscall(177,offset);
 
     return ret;
-}
-
-
-
-/*
- * Questa funzione consente di invocare la system call get_data().
- * I parametri della funzione rappresentano:
- * - msg: Il buffer di memoria dove inserire il messaggio del blocco.
- * - size: Il numero di byte da leggere.
- * - offset: L'indice del blocco di cui si vuole leggere il messaggio.
- */
-void get_data(char *msg, size_t size, uint64_t offset)
-{
-    int ret;
-
-    ret = syscall(156,offset, msg, size);
-
 }
 
 
@@ -95,9 +101,9 @@ void * insert_block_with_thread(void *id)
 
     sprintf(buff, "%ld", id_thread);
 
-    __sync_fetch_and_add(&count_insert,1);
+    __sync_fetch_and_add(&count,1);
 
-    while(count_insert!=NTHREADS);
+    while(count!=3*NTHREADS);
 
     printf("[INSERT] Il thread %ld inizia le sue esecuzioni....\n", id_thread);
 
@@ -119,15 +125,62 @@ void * insert_block_with_thread(void *id)
             __sync_fetch_and_add(&insert_ok,1);
         }
 
-        index = ((index * 2) + 7) % NBLOCKS;
+        index = ((index * 6) + 21) % NBLOCKS;
 
-        usleep((index % 3) * 100000);
+        usleep((index % 8) * 100000);
     }
 
     printf("Il thread inseritore %ld ha terminato\n", id_thread);
+
+    fflush(stdout);
     
 }
 
+
+
+void * read_block(void *id)
+{
+
+    uint64_t id_thread = (uint64_t)id;
+    uint64_t index = id_thread;
+    int ret;
+
+    __sync_fetch_and_add(&count,1);
+
+    while(count!=3*NTHREADS);
+
+    printf("[READ] Il thread %ld inizia le sue esecuzioni....\n", id_thread);
+
+    for(int i = 0; i < ITER; i++)
+    {
+
+        if(i%10==0)
+        {
+            printf("Il thread lettore %ld si trova a %d\n", id_thread, i);    
+        }
+
+
+        index = ((index * 3) + 93) % NBLOCKS;
+
+        ret = get_data(index);
+
+        if(ret == -1)
+        {
+            __sync_fetch_and_add(&read_err,1);
+        }
+        else
+        {
+            __sync_fetch_and_add(&read_ok,1);
+        }
+
+        usleep((index % 9) * 100000);
+
+    }
+
+    printf("Il thread lettore %ld ha terminato\n", id_thread);
+
+    fflush(stdout);
+}
 
 
 
@@ -138,9 +191,9 @@ void * inval_block_with_thread(void *id)
     uint64_t index = id_thread;
     int ret;
 
-    __sync_fetch_and_add(&count_inval,1);
+    __sync_fetch_and_add(&count,1);
 
-    while(count_inval!=NTHREADS);
+    while(count!=3*NTHREADS);
 
     printf("[INVAL] Il thread %ld inizia le sue esecuzioni....\n", id_thread);
 
@@ -153,7 +206,7 @@ void * inval_block_with_thread(void *id)
         }
 
 
-        index = ((index * 2) + 7) % NBLOCKS;
+        index = ((index * 21) + 9) % NBLOCKS;
         ret = invalidate_data(index);
 
         if(ret == -1)
@@ -165,11 +218,13 @@ void * inval_block_with_thread(void *id)
             __sync_fetch_and_add(&inval_ok,1);
         }
 
-        usleep((index % 12) * 100000);
+        usleep((index % 10) * 100000);
 
     }
 
     printf("Il thread invalidatore %ld ha terminato\n", id_thread);
+
+    fflush(stdout);
     
 }
 
@@ -180,6 +235,7 @@ int main(void)
     uint64_t i;
     pthread_t tid_insert[NTHREADS];
     pthread_t tid_inval[NTHREADS];
+    pthread_t tid_read[NTHREADS];
 
 
     /* Creazione dei thread per gli inserimenti */
@@ -200,12 +256,33 @@ int main(void)
 
     printf("Invalidatori creati con successo\n");
 
+    /* Creazione dei thread per le letture */
+
+    for(i=0;i<NTHREADS; i++)
+    {
+        pthread_create(&tid_read[i],NULL,read_block,(void *)(i));
+    }
+
+    printf("Lettori creati con successo\n");
+
     /* Attendo la terminazione dei thread per gli inserimenti */
+
 
     for(i=0;i<NTHREADS; i++)
     {
         pthread_join(tid_insert[i], NULL);
     }
+
+    printf("Inserimenti completati\n");
+
+    /* Attendo la terminazione dei thread per le letture */
+
+    for(i=0;i<NTHREADS; i++)
+    {
+        pthread_join(tid_read[i], NULL);
+    }
+
+    printf("Letture completate\n");
 
     /* Attendo la terminazione dei thread per le invalidazioni */
 
@@ -213,6 +290,8 @@ int main(void)
     {
         pthread_join(tid_inval[i], NULL);
     }
+
+    printf("invalidazioni completate\n");
 
     printf("Esecuzione completata.\n");
 
@@ -223,6 +302,10 @@ int main(void)
     printf("Errori invalidazioni: %d\n", inval_err);
 
     printf("Corrette invalidazioni: %d\n", inval_ok);
+
+    printf("Errori letture: %d\n", read_err);
+
+    printf("Corrette letture: %d\n", read_ok);
 
     return 0;
 

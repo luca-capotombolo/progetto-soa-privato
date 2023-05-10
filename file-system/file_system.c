@@ -451,7 +451,7 @@ retry_house_keeper:
 
     if(sync_var)
     {
-        printk("%s: [ERRORE HOUSE KEEPER] Problemi di inconsistenza: invalidazione e inserimento paralleli\n", MOD_NAME);
+        printk("%s: [ERRORE HOUSE KEEPER] Problemi di inconsistenza: invalidazione e inserimento paralleli %llX\n", MOD_NAME, sync_var);
 
         mutex_unlock(&inval_insert_mutex);
 
@@ -807,6 +807,8 @@ exit_kill_sb:
     is_mounted = 0;
 
     is_free = 0;
+
+    sync_var = 0;
 
     printk("%s: [SMONTAGGIO] Il File System 'soafs' è stato smontato con successo.\n", MOD_NAME);
 }

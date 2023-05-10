@@ -495,7 +495,9 @@ retry_invalidate:
     }
 
     /* Comunico l'inizio del processo di invalidazione */
+
     __atomic_exchange_n (&(sync_var), 0X8000000000000000, __ATOMIC_SEQ_CST);
+
 
     mutex_unlock(&inval_insert_mutex);
 
