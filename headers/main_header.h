@@ -6,8 +6,8 @@
 #include "./file_system.h"
 #include "./data_structure_core.h"
 
-#define NOT_CRITICAL_BUT_INVAL
-#define NOT_CRITICAL_INVAL
+//#define NOT_CRITICAL_BUT_INVAL
+//#define NOT_CRITICAL_INVAL
 //#define NOT_CRITICAL_BUT_GET
 //#define NOT_CRITICAL_GET
 //#define NOT_CRITICAL_BUT_PUT
