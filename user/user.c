@@ -7,22 +7,27 @@
 #include <stdint.h>
 #include<fcntl.h>
 
-#define NUM_DATA_BLOCK 2
 #define MSG_SIZE 4096
+#define NUM_BLOCK_DATA 100
 #define _GNU_SOURCE
 
-void get_data(char *msg, size_t size, uint64_t offset)
+
+void get_data(uint64_t offset)
 {
     int ret;
 
-    ret = syscall(156,offset, msg, size);
+    char msg[MSG_SIZE];
 
-    printf("Valore di ritorno della system call - %d\n", ret);
+    memset(msg, 0, MSG_SIZE);
 
-    printf("Messaggio letto - %s\n", msg);
+    ret = syscall(156, offset, msg, MSG_SIZE);
 
-    memset(msg, 0, 4000);
+    printf("Valore di ritorno della system call GET_DATA: %d\n"\
+            "Messaggio letto: %s\n", ret, msg);
+
 }
+
+
 
 void put_data(const char *msg)
 {
@@ -31,182 +36,109 @@ void put_data(const char *msg)
 
     ret = syscall(174, msg, strlen(msg) + 1);
 
-    printf("Valore di ritorno della system call - %d\n", ret);
+    printf("Valore di ritorno della system call PUT_DATA: %d\n", ret);
+
 }
 
-void read_file()
+
+
+void invalidate_data(uint64_t offset)
 {
-    char msg_read[4000];
+    int ret;
+
+    ret = syscall(177,offset);
+
+    printf("Valore di ritorno della system call INVALIDATE_DATA: %d\n", ret);
+}
+
+
+
+void read_file(char *path)
+{
+    char msg_read[NUM_BLOCK_DATA * MSG_SIZE];
     int fd;
     int ret;
 
-    memset(msg_read, 0, 4000);
+    memset(msg_read, 0, NUM_BLOCK_DATA * MSG_SIZE);
 
-    fd = open("/home/cap/Scrivania/progetto-soa/privato/progetto-soa-privato/file-system/mount/the-file", O_RDWR);
+    //fd = open("/home/cap/Scrivania/progetto-soa/privato/progetto-soa-privato/file-system/mount/the-file", O_RDWR);
+    
+    fd = open(path, O_RDWR);
 
     if(fd == -1)
     {
         printf("Errore apertura del file\n");
-        perror("Errore:");
+        perror("Errore apertura:");
         return;
     }
-
-    printf("fd = %d\n", fd);
 
     ret = read(fd, (void *)msg_read, 4000);
 
     if(ret==-1)
     {
-        perror("Errore:");
+        printf("Errore lettura del file\n");
+        perror("Errore lettura:");
         return;
     }
 
-    printf("Valore restituito: %d\n", ret);
+    printf("Valore di ritorno della operazione di READ: %d\n", ret);
 
     printf("Messaggi letti:\n%s", msg_read);
 
     close(fd);
 }
 
+
+
 int main(int argc, char** argv){
 	int fd;
-	char * filename, *buffer;
-	ssize_t ret;
-	int n;
-    const char * str1 = "Nuovo messaggio 1";
-    const char * str2 = "Nuovo messaggio 2";
-    const char * str3 = "Nuovo messaggio 3";
-
-/*
-    char *msg;
-
-    msg = (char *)malloc(4000);
-
-    memset(msg, 0, 4000);
+	char * msg;
+    char *path_file;
+    int sys_num;
+    int offset;
 
 
-    get_data(msg, 4000, 0);
+    if(argc!=3)
+    {
+        printf( "1. Se si vuole eseguire una GET_DATA si esegua il seguente comando:\n"\
+                "\t./user 0 offset-blocco\n\n"\
+                "2. Se si vuole eseguire una PUT_DATA si esegua il seguente comando:\n"\
+                "\t./user 1 messaggio-da-scrivere-nel-blocco\n\n"\
+                "3. Se si vuole eseguire una INVALIDATE_DATA si esegua il seguente comando:\n"\
+                "\t./user 2 offset-blocco\n\n"\
+                "4. Se si vuole eseguire una lettura del file 'the-file' si esegua il seguente comando:\n"\
+                "\t./user 3 path-file\n");
+        return -1;
+    }
 
-    get_data(msg, 4000, 64);
+    sys_num = atoi(argv[1]);
 
-    get_data(msg, 4000, 128);
+    switch(sys_num)
+    {
+        case 0:
+            offset = atoi(argv[2]);
+            get_data(offset);
+            break;
 
-    get_data(msg, 4000, 192);
-*/
-/* ---------------------------------------------------------------------------------------- */
+        case 1:
+            msg = argv[2];
+            put_data(msg);
+            break;
 
-    read_file();
+        case 2:
+            offset = atoi(argv[2]);
+            invalidate_data(offset);
+            break;
 
-    put_data(str1);
+        case 3:
+            path_file = argv[2];
+            read_file(path_file);
+            break;
 
-    read_file();
+        default:
+            printf("Il numero della system call specificato non è valido\n");
+            return -1;
+    }
 
-    put_data(str2);
-
-    read_file();
-
-    put_data(str3);
-
-    read_file();
-
-/*
-    msg = (char *)malloc(4000);
-    memset(msg,0,4000);
-
-	syscall(156,0, msg, 4000);
-    printf("Blocco dati #0: %s\n", msg);
-    memset(msg,0,4000);
-
-	syscall(156,1, msg, 4000);
-    printf("Blocco dati #1: %s\n", msg);
-    memset(msg,0,4000);
-
-	ret = syscall(174,str, strlen(str)+1);
-    printf("Byte letti: %ld\n", ret);
-    memset(msg,0,4000);
-
-	syscall(156,0, msg, 4000);
-    printf("Blocco dati #0: %s\n", msg);
-    memset(msg,0,4000);
-
-	syscall(156,1, msg, 4000);
-    printf("Blocco dati #1: %s\n", msg);
-    memset(msg,0,4000);
-
-	ret = syscall(174,str2, strlen(str2)+1);
-    printf("Byte letti: %ld\n", ret);
-    memset(msg,0,4000);
-
-	syscall(156,0, msg, 4000);
-    printf("Blocco dati #0: %s\n", msg);
-    memset(msg,0,4000);
-
-	syscall(156,1, msg, 4000);
-    printf("Blocco dati #1: %s\n", msg);
-    memset(msg,0,4000);
-
-	ret = syscall(174,str, strlen(str)+1);
-    printf("Byte letti: %ld\n", ret);
-    memset(msg,0,4000);
-
-	syscall(156,0, msg, 4000);
-    printf("Blocco dati #0: %s\n", msg);
-    memset(msg,0,4000);
-
-	syscall(156,1, msg, 4000);
-    printf("Blocco dati #1: %s\n", msg);
-    memset(msg,0,4000);
-
-	ret = syscall(174,str3, strlen(str3)+1);
-    printf("Byte letti: %ld\n", ret);
-    memset(msg,0,4000);
-
-	syscall(156,0, msg, 4000);
-    printf("Blocco dati #0: %s\n", msg);
-    memset(msg,0,4000);
-
-	syscall(156,1, msg, 4000);
-    printf("Blocco dati #1: %s\n", msg);
-    memset(msg,0,4000);
-
-  syscall(177,2049);
-
-	if(argc != 2)
-	{
-		printf("./user filename\n");
-		return -1;
-	}
-
-	filename = argv[1];
-
-	printf("Tentativo di apertura file %s\n", filename);
-
-	fd = open(filename, O_RDWR);
-
-	if(fd==-1)
-	{
-		printf("Errore apertura file\n");
-		return -1;
-	}
-
-	n = NUM_DATA_BLOCK * MSG_SIZE;
-	buffer = (char *)malloc(n);
-
-	if(buffer==NULL)
-	{
-		printf("Errore allocazione malloc\n");
-		return -1;
-	}
-
-	ret = read(fd, buffer, n);
-
-	if(ret != 1)
-	{
-		printf("Errore nella lettura dei dati\n");
-		return -1;
-	}
-
-	printf("Messaggio letto dal file:\n%s\n", buffer);
-*/
 	return 0;
 }

@@ -64,3 +64,9 @@ rm-test:
 	rm put
 	rm invalidate
 	rm simple-test
+
+compile-user:
+	gcc ./user/user.c -o app-user
+
+rm-user:
+	rm app-user
