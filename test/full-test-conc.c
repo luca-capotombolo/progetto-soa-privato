@@ -11,11 +11,11 @@
 
 #define _GNU_SOURCE
 
-#define NBLOCKS 5000
+#define NBLOCKS 50
 
-#define NTHREADS 10
+#define NTHREADS 4
 
-#define ITER 100
+#define ITER 50
 
 #define MSG_SIZE 4096
 
@@ -127,7 +127,7 @@ void * insert_block_with_thread(void *id)
 
         index = ((index * 6) + 21) % NBLOCKS;
 
-        usleep((index % 8) * 100000);
+        //usleep((index % 15) * 100000);
     }
 
     printf("Il thread inseritore %ld ha terminato\n", id_thread);
@@ -173,7 +173,7 @@ void * read_block(void *id)
             __sync_fetch_and_add(&read_ok,1);
         }
 
-        usleep((index % 9) * 100000);
+        //usleep((index % 15) * 100000);
 
     }
 
@@ -218,7 +218,7 @@ void * inval_block_with_thread(void *id)
             __sync_fetch_and_add(&inval_ok,1);
         }
 
-        usleep((index % 10) * 100000);
+        //usleep((index % 15) * 100000);
 
     }
 
@@ -275,7 +275,7 @@ int main(void)
 
     printf("Inserimenti completati\n");
 
-    /* Attendo la terminazione dei thread per le letture */
+    /* Attendo la terminazione dei thread per le letture  */
 
     for(i=0;i<NTHREADS; i++)
     {

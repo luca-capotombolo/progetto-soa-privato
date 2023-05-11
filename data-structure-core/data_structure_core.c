@@ -2,6 +2,7 @@
 #include <linux/string.h>       /* strncpy() */
 #include <linux/slab.h>         /* kmalloc() */
 #include <linux/wait.h>         /* wait_event_interruptible() - wake_up_interruptible() */
+#include <linux/jiffies.h>
 
 #include "../headers/main_header.h"
 
@@ -553,7 +554,8 @@ retry_invalidate:
 
 sleep_again:
 
-    wait_event_interruptible(the_queue, (gp->standing_ht[index_ht] >= grace_period_threads_ht) && (gp->standing_sorted[index_sorted] >= grace_period_threads_sorted));
+    //wait_event_interruptible(the_queue, (gp->standing_ht[index_ht] >= grace_period_threads_ht) && (gp->standing_sorted[index_sorted] >= grace_period_threads_sorted));
+    wait_event_interruptible_timeout(the_queue, (gp->standing_ht[index_ht] >= grace_period_threads_ht) && (gp->standing_sorted[index_sorted] >= grace_period_threads_sorted), msecs_to_jiffies(1000));    
 
 #ifdef NOT_CRITICAL_INVAL
     printk("%s: gp->standing_ht[index_ht] = %ld\tgrace_period_threads_ht = %ld\tgp->standing_sorted[index_sorted] = %ld\tgrace_period_threads_sorted = %ld\n", MOD_NAME, gp->standing_ht[index_ht], grace_period_threads_ht, gp->standing_sorted[index_sorted], grace_period_threads_sorted);
