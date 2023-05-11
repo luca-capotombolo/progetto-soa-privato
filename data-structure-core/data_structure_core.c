@@ -486,8 +486,6 @@ retry_invalidate:
 
     if(sync_var)
     {
-        printk("%s: [ERRORE INVALIDATE DATA] Problema di incosistenza: invalidazione e inserimento paralleli\n", MOD_NAME);
-
         mutex_unlock(&inval_insert_mutex);
 
         mutex_unlock(&invalidate_mutex);
