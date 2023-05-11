@@ -1,7 +1,7 @@
 #include <linux/buffer_head.h>  /* sb_bread()-brelse() */
 #include <linux/string.h>       /* strncpy() */
 #include <linux/slab.h>         /* kmalloc() */
-//#include <linux/wait.h>         /* wait_event_interruptible() - wake_up_interruptible() */
+#include <linux/wait.h>         /* wait_event_interruptible() - wake_up_interruptible() */
 #include <linux/jiffies.h>
 
 #include "../headers/main_header.h"
