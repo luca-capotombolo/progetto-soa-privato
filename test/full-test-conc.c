@@ -11,7 +11,7 @@
 
 #define _GNU_SOURCE
 
-#define NBLOCKS 50
+#define NBLOCKS 50002
 
 #define NTHREADS 4
 

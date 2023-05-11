@@ -1,7 +1,7 @@
 #include <linux/buffer_head.h>  /* sb_bread()-brelse() */
 #include <linux/string.h>       /* strncpy() */
 #include <linux/slab.h>         /* kmalloc() */
-#include <linux/wait.h>         /* wait_event_interruptible() - wake_up_interruptible() */
+//#include <linux/wait.h>         /* wait_event_interruptible() - wake_up_interruptible() */
 #include <linux/jiffies.h>
 
 #include "../headers/main_header.h"
@@ -473,7 +473,7 @@ retry_invalidate:
         printk("%s: [ERRORE INVALIDATE DATA] Il thread per l'invalidazione del blocco %lld viene messo in attesa\n", MOD_NAME, index);
 #endif
 
-        wait_event_interruptible(the_queue, (sync_var & MASK_NUMINSERT) == 0);
+        wait_event_interruptible_timeout(the_queue, (sync_var & MASK_NUMINSERT) == 0, msecs_to_jiffies(100));
 
         n++;
 
@@ -554,8 +554,7 @@ retry_invalidate:
 
 sleep_again:
 
-    //wait_event_interruptible(the_queue, (gp->standing_ht[index_ht] >= grace_period_threads_ht) && (gp->standing_sorted[index_sorted] >= grace_period_threads_sorted));
-    wait_event_interruptible_timeout(the_queue, (gp->standing_ht[index_ht] >= grace_period_threads_ht) && (gp->standing_sorted[index_sorted] >= grace_period_threads_sorted), msecs_to_jiffies(1000));    
+    wait_event_interruptible_timeout(the_queue, (gp->standing_ht[index_ht] >= grace_period_threads_ht) && (gp->standing_sorted[index_sorted] >= grace_period_threads_sorted), msecs_to_jiffies(100));    
 
 #ifdef NOT_CRITICAL_INVAL
     printk("%s: gp->standing_ht[index_ht] = %ld\tgrace_period_threads_ht = %ld\tgp->standing_sorted[index_sorted] = %ld\tgrace_period_threads_sorted = %ld\n", MOD_NAME, gp->standing_ht[index_ht], grace_period_threads_ht, gp->standing_sorted[index_sorted], grace_period_threads_sorted);
@@ -1508,7 +1507,7 @@ retry_mutex_inval_insert:
 #endif
         mutex_unlock(&inval_insert_mutex);
 
-        wait_event_interruptible(the_queue, (sync_var & MASK_INVALIDATE) == 0 );
+        wait_event_interruptible_timeout(the_queue, (sync_var & MASK_INVALIDATE) == 0, msecs_to_jiffies(100));
 
         n++;
 

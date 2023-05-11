@@ -9,6 +9,7 @@
 #include <linux/sched.h>
 #include <linux/kthread.h>
 #include <linux/delay.h>
+#include <linux/jiffies.h>
 #include <linux/version.h>	/* For LINUX_VERSION_CODE */
 
 #include "../headers/main_header.h"
@@ -18,6 +19,7 @@
 int is_mounted = 0;                                             /* Inizialmente non ho alcun montaggio. */
 struct super_block *sb_global = NULL;                           /* Riferimento al superblocco. */
 int is_free = 0;
+int kernel_thread_ok = 0;
 
 
 static struct super_operations soafs_super_ops = {
@@ -441,7 +443,7 @@ retry_house_keeper:
         printk("%s: [HOUSE KEEPER] Il thread demone viene messo in attesa\n", MOD_NAME);
 #endif
 
-        wait_event_interruptible(the_queue, (sync_var & MASK_NUMINSERT) == 0);
+        wait_event_interruptible_timeout(the_queue, (sync_var & MASK_NUMINSERT) == 0, msecs_to_jiffies(100));
 
 #ifdef NOT_CRITICAL_HK
         printk("%s: [HOUSE KEEPER] Il thread demone riprende l'esecuzione\n", MOD_NAME);
@@ -493,7 +495,7 @@ retry_house_keeper:
 
 sleep_again:
 
-    wait_event_interruptible(the_queue, (gp->standing_ht[index_ht] >= grace_period_threads_ht) && (gp->standing_sorted[index_sorted] >= grace_period_threads_sorted));
+    wait_event_interruptible_timeout(the_queue, (gp->standing_ht[index_ht] >= grace_period_threads_ht) && (gp->standing_sorted[index_sorted] >= grace_period_threads_sorted), msecs_to_jiffies(100));
 
 #ifdef NOT_CRITICAL_BUT_HK
     printk("%s: gp->standing_ht[index_ht] = %ld\tgrace_period_threads_ht = %ld\tgp->standing_sorted[index_sorted] = %ld\tgrace_period_threads_sorted = %ld\n", MOD_NAME, gp->standing_ht[index_ht], grace_period_threads_ht, gp->standing_sorted[index_sorted], grace_period_threads_sorted);
@@ -541,16 +543,7 @@ int new_thread_daemon(void)
 
     printk("%s: [DEMONE] Creazione del thread demone avvenuta con successo\n", MOD_NAME);
 
-    ret = wake_up_process(kt);
-
-    if(ret)
-    {
-        printk("%s: [DEMONE] Risveglio del thread demone avvenuto con successo\n", MOD_NAME);
-    }
-    else
-    {
-        printk("%s: [DEMONE] Il thread è già in esecuzione\n", MOD_NAME);
-    }    
+    ret = wake_up_process(kt);  
 
     return 0;
 }
@@ -720,6 +713,14 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
         return -EIO;
     }
 
+    ret = __sync_bool_compare_and_swap(&kernel_thread_ok, 0, 1);
+
+    if(!ret)
+    {
+        printk("%s: [ERRORE MONTAGGIO] Il thread demone esiste già...\n", MOD_NAME);
+        goto exit_mont;
+    }
+
     ret = new_thread_daemon();
 
     if(ret)
@@ -736,6 +737,8 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
 
         return -EIO;        
     }
+
+exit_mont:
 
     /* Rilascio del superblocco */
     brelse(bh);
