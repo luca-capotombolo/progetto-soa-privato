@@ -1685,7 +1685,7 @@ int init_ht_valid_and_sorted_list(uint64_t num_data_block)
         return 1;
     }
     
-    if(sbi->num_block_free == sbi->num_block)
+    if(sbi->num_block_free == (sbi->num_block - 2 - sbi->num_block_state))
     {
         printk("%s: [INIZIALIZZAZIONE CORE - HT + SORTED] Non ci sono blocchi attualmente validi\n", MOD_NAME);
 

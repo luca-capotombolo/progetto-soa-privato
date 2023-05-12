@@ -641,20 +641,6 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     printk("%s: [MONTAGGIO] Il numero di blocchi liberi del dispositivo è pari a %lld.\n", MOD_NAME, sb_disk->num_block_free);
     printk("%s: [MONTAGGIO] Il numero di blocchi di stato del dispositivo è pari a %lld.\n", MOD_NAME, sb_disk->num_block_state);
     printk("%s: [MONTAGGIO] Il numero di blocchi massimo da caricare all'aggiornamento è pari a %lld.\n", MOD_NAME, sb_disk->update_list_size);
-
-    if(sb_disk->num_block > NBLOCKS)
-    {
-        printk("%s: [ERRORE MONTAGGIO] Il numero di blocchi del dispositivo non è ammissibile\n", MOD_NAME);
-
-        brelse(bh);
-
-        kfree(sbi);
-
-        is_free = 1;
-
-        return -EINVAL;
-        
-    }
     
     /* Recupero il root inode. */
     root_inode = iget_locked(sb, 0);
