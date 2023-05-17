@@ -88,10 +88,12 @@ struct soafs_sb_info {
 
 extern int check_is_mounted(void);                              //file_system.c
 extern void free_all_memory(void);                              //file_system.c
+extern void wake_up_umount(void);                               //file_system.c
 extern struct file_system_type soafs_fs_type;                   //file_system.c
 extern int is_mounted;                                          //file_system.c
 extern char *mount_path;                                        //file_system.c
 extern struct super_block * sb_global;                          //file_system.c
+
 
 extern const struct inode_operations soafs_inode_ops;           // file.c
 extern const struct file_operations soafs_file_operations;      // file.c

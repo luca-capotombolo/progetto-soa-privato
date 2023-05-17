@@ -17,6 +17,9 @@
 
 
 int is_mounted = 0;                                             /* Inizialmente non ho alcun montaggio. */
+int stop = 1;                                                   
+uint64_t num_threads_run = 0;                                   /* Numero di threads attualmente in esecuzione */
+
 struct super_block *sb_global = NULL;                           /* Riferimento al superblocco. */
 int is_free = 0;
 int kernel_thread_ok = 0;
@@ -31,24 +34,6 @@ static struct super_operations soafs_super_ops = {
 static struct dentry_operations soafs_dentry_ops = {
 
 };
-
-
-
-/*
- * Poiché per semplicità si è assunto di lavorare
- * con una singola istanza di file system 'soafs',
- * questa funzione verifica se è stata montata tale
- * istanza.
- */
-int check_is_mounted(void)
-{
-    if(!is_mounted)
-    {
-        return 0;
-    }
-
-    return 1;
-}
 
 
 
@@ -171,6 +156,15 @@ static int set_free_block(void)
 
     return 0;   
     
+}
+
+
+
+void wake_up_umount(void)
+{
+    __sync_fetch_and_sub(&(num_threads_run),1);
+
+    wake_up_interruptible(&umount_queue);
 }
 
 
@@ -762,6 +756,36 @@ static void soafs_kill_sb(struct super_block *sb)
         goto exit_kill_sb;
     }
 
+    ret = __sync_bool_compare_and_swap(&(stop), 0, 1);
+
+    if(!ret)
+    {
+        return ;
+    }
+
+    ret = __sync_bool_compare_and_swap(&(is_mounted), 1, 0);
+
+    if(!ret)
+    {
+        printk("%s: [ERRORE SMONTAGGIO] Il valore della variabile is_mounted non è corretto\n", MOD_NAME);
+        return ;
+    }
+
+umount_retry_running:
+
+    if(num_threads_run > 0)
+    {
+        wait_event_interruptible_timeout(umount_queue, num_threads_run == 0, msecs_to_jiffies(100));
+
+        n++;
+
+        goto umount_retry_running;
+    }
+
+    printk("%s: Il numero di tentativi richiesto per lo smontaggio è pari a %d\n", MOD_NAME, n);
+
+    n = 0;
+
 retry_flush_bitmask:
 
     ret = flush_bitmask();
@@ -772,6 +796,8 @@ retry_flush_bitmask:
         printk("%s: [ERRORE SMONTAGGIO] Tentativo numero %d fallito per il flush della bitmask\n", MOD_NAME, n);
         goto retry_flush_bitmask;
     }
+
+    printk("%s: Flush della bitmask eseguito con successo\n", MOD_NAME);
 
     n = 0;
 
@@ -786,6 +812,8 @@ retry_set_free_block:
         goto retry_set_free_block;
     }
 
+    printk("%s: Settaggio dei blocchi liberi eseguito con successo\n", MOD_NAME);
+
     n = 0;
 
 retry_umount:
@@ -799,13 +827,13 @@ retry_umount:
         goto retry_umount;
     }
 
+    printk("%s: Flush dei blocchi validi eseguito con successo\n", MOD_NAME);
+
     free_all_memory();
 
 exit_kill_sb:
 
     kill_block_super(sb);
-
-    is_mounted = 0;
 
     is_free = 0;
 
@@ -839,6 +867,17 @@ static struct dentry *soafs_mount(struct file_system_type *fs_type, int flags, c
     }
     else
     {
+
+        printk("%s: Numero di thread in esecuzione pari a %lld\n", MOD_NAME, num_threads_run);
+
+        ret_cmp = __sync_bool_compare_and_swap(&stop, 1, 0);
+
+        if(!ret_cmp)
+        {
+            printk("%s: [ERRORE MONTAGGIO] La barriera per lo stop dello smontaggio non è settata correttamente\n", MOD_NAME);
+            return ERR_PTR(-EINVAL);
+        }  
+
         printk("%s: [MONTAGGIO] Montaggio del File System sul device %s avvenuto con successo.\n",MOD_NAME,dev_name);
     }
 

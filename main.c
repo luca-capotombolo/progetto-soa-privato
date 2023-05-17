@@ -76,7 +76,6 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
 
     struct soafs_sb_info *sbi;
     struct ht_valid_entry *entry;
-    int ret;
     int i;
     int available_data;
     size_t byte_ret;
@@ -88,12 +87,27 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
 #ifdef LOG
     LOG_SYSTEM_CALL("GET_DATA", "get_data");
 #endif
-    
-    ret = check_is_mounted();                                   /* verifico se il file system su cui si deve operare è stato effettivamente montato */
 
-    if(!ret)
+    if(stop)
     {
+        printk("%s: Il valore di stop è %d\n", MOD_NAME, stop);
+
         LOG_DEV_ERR("GET_DATA", "get_data");
+
+        return -ENODEV;
+    }
+
+    /* Avviso l'inizio dell'esecuzione per il thread */
+    __sync_fetch_and_add(&(num_threads_run),1);
+    
+    /* verifico se il file system su cui si deve operare è stato effettivamente montato */
+
+    if(!is_mounted)
+    {
+        wake_up_umount();
+
+        LOG_DEV_ERR("GET_DATA", "get_data");
+
         return -ENODEV;
     }
 
@@ -103,6 +117,9 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
     if( check_offset(offset, sbi) || check_size(size) )
     {
         LOG_PARAM_ERR("GET_DATA", "get_data");
+
+        wake_up_umount();
+
         return -EINVAL;
     }
 
@@ -126,6 +143,8 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
 
         wake_up_interruptible(&the_queue);
 
+        wake_up_umount();
+
         return -ENODATA;
     }
 
@@ -143,6 +162,8 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
 #ifdef NOT_CRITICAL_GET
         printk("%s: [ERRORE GET DATA] La lettura del blocco %lld è terminata con insuccesso\n", MOD_NAME, offset);
 #endif
+
+        wake_up_umount();
 
         return -ENODATA;
     }
@@ -179,6 +200,8 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
     
     byte_ret = copy_to_user(destination, msg_block, byte_copy);
 
+    wake_up_umount();
+
 #ifdef NOT_CRITICAL_BUT_GET
     printk("%s: [GET DATA] Il messaggio del blocco %lld è stato consegnato con successo\n", MOD_NAME, offset);
 #endif
@@ -213,17 +236,35 @@ asmlinkage uint64_t sys_put_data(char * source, size_t size){
     LOG_SYSTEM_CALL("PUT_DATA", "put_data");
 #endif
 
-    ret = check_is_mounted();   /* verifico se il file system su cui si deve operare è stato effettivamente montato */
-
-    if(!ret)
+    if(stop)
     {
+        printk("%s: Il valore di stop è %d\n", MOD_NAME, stop);
+
         LOG_DEV_ERR("PUT_DATA", "put_data");
+
+        return -ENODEV;
+    }
+
+    /* Avviso l'inizio dell'esecuzione per il thread */
+    __sync_fetch_and_add(&(num_threads_run),1);
+    
+    /* verifico se il file system su cui si deve operare è stato effettivamente montato */
+
+    if(!is_mounted)
+    {
+        wake_up_umount();
+
+        LOG_DEV_ERR("PUT_DATA", "put_data");
+
         return -ENODEV;
     }
 
     if(check_size(size))
     {
         LOG_PARAM_ERR("PUT_DATA", "put_data");
+
+        wake_up_umount();
+
         return -EINVAL;
     }
 
@@ -239,6 +280,8 @@ asmlinkage uint64_t sys_put_data(char * source, size_t size){
 #ifdef NOT_CRITICAL_BUT_PUT
         printk("%s: [ERRORE PUT DATA] Non ci sono più blocchi liberi da utilizzare\n", MOD_NAME);
 #endif
+
+        wake_up_umount();
 
         return -ENOMEM;
     }
@@ -268,6 +311,9 @@ retry:
         if(n > 5)
         {
             printk("%s: [ERRORE PUT DATA] Numero di tentativi esaurito per il recupero di un blocco libero.\n", MOD_NAME);
+
+            wake_up_umount();
+
             return -ENOMEM;
         }
 
@@ -283,6 +329,9 @@ retry:
         if(ret)
         {
                 printk("%s: [ERRORE PUT DATA] Errore esecuzione kmalloc() nel recupero di un blocco libero\n", MOD_NAME);
+
+                wake_up_umount();
+
                 return -EIO;    
         }
 
@@ -297,6 +346,7 @@ retry:
 #ifdef NOT_CRITICAL_BUT_PUT
                 printk("%s: [ERRORE PUT DATA] Non ci sono più blocchi liberi da utilizzare\n", MOD_NAME);
 #endif
+                wake_up_umount();
 
                 return -ENOMEM;
         }
@@ -327,6 +377,8 @@ retry:
 #ifdef NOT_CRITICAL_BUT_PUT
         printk("%s: [ERRORE PUT DATA] Errore nel recupero di un blocco libero\n", MOD_NAME);
 #endif
+
+        wake_up_umount();
 
         return -ENOMEM;
     }
@@ -376,6 +428,8 @@ retry:
         
         insert_free_list_conc(item);
 
+        wake_up_umount();
+
         return -EIO;
     }
 
@@ -405,6 +459,8 @@ retry:
 #endif
 
         kfree(msg);
+
+        wake_up_umount();
 
         return -ENOMEM;
     }
@@ -454,6 +510,8 @@ retry_get_device_block:
     printk("%s: [PUT DATA] Il messaggio '%s' è stato inserito con successo nel blocco %lld\n", MOD_NAME, msg, index);
 #endif
 
+    wake_up_umount();
+
     return index;
 	
 }
@@ -473,11 +531,26 @@ asmlinkage int sys_invalidate_data(uint64_t offset){
     LOG_SYSTEM_CALL("INVALIDATE DATA", "invalidate_data");
 #endif
 
-    ret = check_is_mounted();
-
-    if(!ret)
+    if(stop)
     {
+        printk("%s: Il valore di stop è %d\n", MOD_NAME, stop);
+
         LOG_DEV_ERR("INVALIDATE DATA", "invalidate_data");
+
+        return -ENODEV;
+    }
+
+    /* Avviso l'inizio dell'esecuzione per il thread */
+    __sync_fetch_and_add(&(num_threads_run),1);
+    
+    /* verifico se il file system su cui si deve operare è stato effettivamente montato */
+
+    if(!is_mounted)
+    {
+        wake_up_umount();
+
+        LOG_DEV_ERR("INVALIDATE DATA", "invalidate_data");
+
         return -ENODEV;
     }
 
@@ -487,6 +560,9 @@ asmlinkage int sys_invalidate_data(uint64_t offset){
     if( check_offset(offset, sbi) )
     {
         LOG_PARAM_ERR("INVALIDATE DATA", "invalidate_data");
+    
+        wake_up_umount();
+
         return -EINVAL;
     }
 
@@ -501,6 +577,8 @@ asmlinkage int sys_invalidate_data(uint64_t offset){
         printk("%s: [ERRORE INVALIDATE DATA] E' stata richiesta l'invalidazione del blocco %lld ma il blocco non è valido\n", MOD_NAME, offset);
 #endif
 
+        wake_up_umount();
+
         return -ENODATA;
     }
 
@@ -513,13 +591,17 @@ asmlinkage int sys_invalidate_data(uint64_t offset){
 #ifdef NOT_CRITICAL_BUT_INVAL
         printk("%s: [ERRORE INVALIDATE DATA] L'invalidazione del blocco %lld non è stata eseguita con successo\n", MOD_NAME, offset);  
 #endif   
-   
+    
+        wake_up_umount();
+
         return -ENODATA;
     }
 
 #ifdef NOT_CRITICAL_BUT_INVAL
     printk("%s: [INVALIDATE DATA] L'invalidazione del blocco %lld è stata eseguita con successo\n", MOD_NAME, offset);
 #endif
+
+    wake_up_umount();
 
     return 0;
 	

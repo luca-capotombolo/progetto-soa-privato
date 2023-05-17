@@ -11,7 +11,7 @@
 
 #define _GNU_SOURCE
 
-#define NBLOCKS 50000
+#define NBLOCKS 50002
 
 #define NTHREADS 4
 
@@ -127,7 +127,7 @@ void * insert_block_with_thread(void *id)
 
         index = ((index * 6) + 21) % NBLOCKS;
 
-        //usleep((index % 15) * 100000);
+        usleep((index % 15) * 100000);
     }
 
     printf("Il thread inseritore %ld ha terminato\n", id_thread);
@@ -173,7 +173,7 @@ void * read_block(void *id)
             __sync_fetch_and_add(&read_ok,1);
         }
 
-        //usleep((index % 15) * 100000);
+        usleep((index % 15) * 100000);
 
     }
 
@@ -218,7 +218,7 @@ void * inval_block_with_thread(void *id)
             __sync_fetch_and_add(&inval_ok,1);
         }
 
-        //usleep((index % 15) * 100000);
+        usleep((index % 15) * 100000);
 
     }
 

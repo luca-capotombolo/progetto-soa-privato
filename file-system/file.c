@@ -2,6 +2,7 @@
 #include <linux/buffer_head.h>
 #include <linux/string.h>
 #include <linux/slab.h>
+#include <linux/version.h>	/* For LINUX_VERSION_CODE */
 
 #include "../headers/main_header.h"
 
@@ -19,8 +20,23 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
     
     printk("%s: [READ DRIVER] E' stata invocata la funzione di lettura con la dimensione richiesta pari a %ld.", MOD_NAME, len);
 
+    /* Avviso l'inizio dell'esecuzione per il thread */
+    __sync_fetch_and_add(&(num_threads_run),1);
+
+    if(!is_mounted)
+    {
+        wake_up_umount();
+
+        LOG_DEV_ERR("GET_DATA", "get_data");
+
+        return -ENODEV;
+    }
+
+
     if(*off)
     {
+        wake_up_umount();
+
         return 0;
     }
 
@@ -37,6 +53,8 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
         __sync_fetch_and_add(&(gp->standing_sorted[index]),1);
 
         wake_up_interruptible(&the_queue);
+
+        wake_up_umount();
 
         return 0;
     }
@@ -55,6 +73,8 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
 
         wake_up_interruptible(&the_queue);
 
+        wake_up_umount();
+
         return -EIO;
     }
 
@@ -72,6 +92,8 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
             wake_up_interruptible(&the_queue);
 
             kfree(msg_to_copy);
+
+            wake_up_umount();
 
             return -EIO;
         }  
@@ -144,6 +166,8 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
 
     *off = 1;
 
+    wake_up_umount();
+
     return bytes_copied - ret;
 
 }
@@ -152,12 +176,44 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
 
 int onefilefs_open(struct inode *inode, struct file *file) {
 
-  	 return 0;
+    /* Avviso l'inizio dell'esecuzione per il thread */
+    __sync_fetch_and_add(&(num_threads_run),1);
+
+    if(!is_mounted)
+    {
+        wake_up_umount();
+
+        LOG_DEV_ERR("GET_DATA", "get_data");
+
+        return -ENODEV;
+    }
+
+    printk("%s: Il dispositivo è stato aperto\n", MOD_NAME);
+
+    wake_up_umount();
+
+    return 0;
 }
 
 
 
 int onefilefs_release(struct inode *inode, struct file *file) {
+
+    /* Avviso l'inizio dell'esecuzione per il thread */
+    __sync_fetch_and_add(&(num_threads_run),1);
+
+    if(!is_mounted)
+    {
+        wake_up_umount();
+
+        LOG_DEV_ERR("GET_DATA", "get_data");
+
+        return -ENODEV;
+    }
+
+    printk("%s: Il dispositivo è stato chiuso\n", MOD_NAME);
+
+    wake_up_umount();
 
    	return 0;
 }
@@ -184,7 +240,12 @@ struct dentry *onefilefs_lookup(struct inode *parent_inode, struct dentry *child
 		    return child_dentry;
 	    }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 	    inode_init_owner(&init_user_ns,the_inode, NULL, S_IFREG);
+#else
+        inode_init_owner(the_inode, NULL, S_IFREG);
+#endif
+
 	    the_inode->i_mode = S_IFREG | S_IRUSR | S_IRGRP | S_IROTH | S_IWUSR | S_IWGRP | S_IXUSR | S_IXGRP | S_IXOTH;
         the_inode->i_fop = &soafs_file_operations;
 	    the_inode->i_op = &soafs_inode_ops;

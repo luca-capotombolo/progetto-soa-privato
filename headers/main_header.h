@@ -78,9 +78,15 @@ struct result_inval {
  */
 extern uint64_t sync_var;
 
+extern uint64_t num_threads_run;
+
+extern int stop;
+
 static DEFINE_MUTEX(inval_insert_mutex);
 
 static DECLARE_WAIT_QUEUE_HEAD(the_queue);
+
+static DECLARE_WAIT_QUEUE_HEAD(umount_queue);
 
 /* Questo mutex mi consente di avere una sola invalidazione alla volta */
 static DEFINE_MUTEX(invalidate_mutex);
