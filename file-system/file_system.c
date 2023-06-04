@@ -15,14 +15,39 @@
 #include "../headers/main_header.h"
 
 
+/*
+ * Questa variabile mi dice se attualmente è montata (o si sta cercando di
+ * montare) un'istanza di FS di tipo 'soafs'. Poiché inizialmente non ho
+ * alcun FS montato, il valore di questa variabile è settato a 0.
+ */
+int is_mounted = 0;
 
-int is_mounted = 0;                                             /* Inizialmente non ho alcun montaggio. */
-int stop = 1;                                                   
-uint64_t num_threads_run = 0;                                   /* Numero di threads attualmente in esecuzione */
+/*
+ * Questa variabile mi assicura che il thread incaricato dello smontaggio del
+ * FS riuscirà effettivamente a smontarlo.
+ */                                          
+int stop = 1;
+
+/* 
+ * Questa variabile rappresente il numero di threads che sono attualmente
+ * in esecuzione. Viene utilizzata per capire se è possibile o meno eseguire
+ * lo smontaggio del FS. Lo smontaggio del file system può avvenire solo dal
+ * momento in cui questa variabile assume valore 0.
+ */                                      
+uint64_t num_threads_run = 0;                                   
 
 struct super_block *sb_global = NULL;                           /* Riferimento al superblocco. */
+
+/*
+ * Questa variabile viene utilizzata per verificare se le strutture dati
+ * core del modulo sono state già deallocate.
+ */
 int is_free = 0;
-int kernel_thread_ok = 0;
+
+int kernel_thread_ok = 0;                                       /* Esistenza del kernel thread */
+
+
+
 
 
 static struct super_operations soafs_super_ops = {
@@ -38,46 +63,40 @@ static struct dentry_operations soafs_dentry_ops = {
 
 
 /*
- * Questa funzione ha il compito di determinare
- * i primi blocchi liberi nel device. Il numero
- * massimo di blocchi liberi che può essere caricato
- * all'interno dell'array è pari a update_list_size.
- * Inoltre, la funzione determina il numero totale di
- * blocchi liberi nel device.
+ * set_free_block - Gestione delle informazioni relative ai blocchi liberi all'istante dello smontaggio
+ * 
+ * Questa funzione ha il compito di determinare i primi blocchi liberi nel device. Il numero massimo di
+ * blocchi liberi che può essere caricato all'interno dell'array index_free è pari a 'update_list_size'.
+ * Inoltre, la funzione determina anche il numero totale dei blocchi liberi nel device.
+ *
+ * La funzione restituisce 0 in caso di successo; altrimenti restituisce il valore 1.
  */
 static int set_free_block(void)
 {
-    struct soafs_sb_info *sbi;
-    struct buffer_head *bh;
-    struct soafs_super_block * b;
+    int ret;
     uint64_t *free_blocks;
     uint64_t index;
     uint64_t num_block_data;
     uint64_t counter;
     uint64_t dim;
     uint64_t update_list_size;
-    int ret;
+    struct soafs_sb_info *sbi;
+    struct buffer_head *bh;
+    struct soafs_super_block *b;
     
+    /* Recupero il numero massimo di indici dei blocchi liberi che posso inserire nell'array */
     sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
 
     update_list_size = sbi->update_list_size;
-    
-    free_blocks = (uint64_t *)kzalloc(sizeof(uint64_t) * update_list_size, GFP_KERNEL);
-
-    if(free_blocks == NULL)
-    {
-        printk("%s: [ERRORE SMONTAGGIO - SET FREE BLOCK] Errore esecuzione della kzalloc() nella ricerca dei blocchi liberi\n", MOD_NAME);
-        return 1;
-    }
 
     printk("%s: [SMONTAGGIO - SET FREE BLOCK] Inizio ricerca blocchi liberi (al massimo %lld)...\n", MOD_NAME, update_list_size);
 
+    /* Leggo il superblocco del dispositivo */
     bh = sb_bread(sb_global, SOAFS_SB_BLOCK_NUMBER);    
 
     if(bh == NULL)
     {
         printk("%s: [ERRORE FREE BLOCK] La lettura del superblocco è terminata senza successo\n", MOD_NAME);
-        kfree(free_blocks);
         return 1;
     }
 
@@ -85,12 +104,16 @@ static int set_free_block(void)
 
     num_block_data = sbi->num_block - 2 - sbi->num_block_state;
 
-    if((num_block_free_used == sbi->num_block_free) && (head_free_block_list == NULL))
+    /* Verifico se attualmente tutti i blocchi sono occupati */
+
+    if( (num_block_free_used == sbi->num_block_free) && (head_free_block_list == NULL) )
     {
         printk("%s: [SMONTAGGIO - SET FREE BLOCK] I blocchi liberi a disposizione sono terminati\n", MOD_NAME);
 
+        /* L'array index_free non contiene alcun indice di blocco libero da caricare al successivo montaggio */
         b->actual_size = 0;
 
+        /* Non ci sono blocchi attualmente liberi nel dispositivo */
         b->num_block_free = 0;
 
         mark_buffer_dirty(bh);
@@ -99,29 +122,50 @@ static int set_free_block(void)
     
         brelse(bh);
 
-        kfree(free_blocks);
-
         return 0;
     }
 
+    /* Alloco la struttura dati per memorizza gli indici dei blocchi liberi */
+
+    free_blocks = (uint64_t *)kzalloc(sizeof(uint64_t) * update_list_size, GFP_KERNEL);
+
+    if(free_blocks == NULL)
+    {
+        printk("%s: [ERRORE SMONTAGGIO - SET FREE BLOCK] Errore nell'allocazione dell'array 'free_blocks'\n", MOD_NAME);
+        return 1;
+    }
+
     /*
-     * Rappresenta il numero attuale di blocchi
-     * liberi che sono stati identificati. Di questi
-     * blocchi, al più update_list_size verranno
-     * inseriti all'interno dell'array.
+     * Rappresenta il numero corrente dei blocchi liberi che sono stati identificati. Di questi
+     * blocchi, al più 'update_list_size' verranno inseriti all'interno dell'array 'index_free'.
      */    
     counter = 0;
+
+    /* Rappresenta il numero dei blocchi liberi che sono stati inseriti all'interno dell'array 'index_free' */
     dim = 0;
+
+    /*
+     * La ricerca dei primi indici dei blocchi liberi avviene iterando sui blocchi di dati
+     * del dispositivo. Per evitare un utilizzo non necessario del page cache sfrutto la
+     * struttura dati della bitmask presente nel dispositivo.
+     */
 
     for(index = 0; index < num_block_data; index++)
     {
+
+        /* Controllo la validità del blocco di dati su cui sto iterando */
         ret = check_bit(index);
+
+        if(ret == 2)
+        {
+            printk("%s: [ERRORE SMONTAGGIO - SET FREE BLOCK] Errore nel determinare la validità del blocco #%lld\n", MOD_NAME, index);
+            return 1;
+        }
 
         if(!ret)
         {
-#ifdef NOT_CRITICAL_INIT
             printk("%s: [SMONTAGGIO - SET FREE BLOCK] Blocco libero #%lld\n", MOD_NAME, index);
-#endif
+
             if(counter < update_list_size)
             {
                 free_blocks[counter] = index;
@@ -133,14 +177,17 @@ static int set_free_block(void)
 
     }
 
+    /* Registro il numero totale dei blocchi liberi che sono stati identificati */
     b->num_block_free = counter;
 
-    printk("%s: [SMONTAGGIO - SET FREE BLOCK] Numero di blocchi liberi trovati %lld\n", MOD_NAME, counter);
+    printk("%s: [SMONTAGGIO - SET FREE BLOCK] Numero di blocchi liberi trovati: %lld\n", MOD_NAME, counter);
 
+    /* Registro la dimensione effettiva dell'array 'index_free' */
     b->actual_size = dim;
 
-    printk("%s: [SMONTAGGIO - SET FREE BLOCK] Dimensione array %lld\n", MOD_NAME, dim);
+    printk("%s: [SMONTAGGIO - SET FREE BLOCK] Dimensione array index_free: %lld\n", MOD_NAME, dim);
     
+    /* Inserisco gli indici precedentemente trovati all'interno dell'array 'index_free' */
     for(index = 0; index < dim; index++)
     {
         b-> index_free[index] = free_blocks[index];
@@ -154,8 +201,7 @@ static int set_free_block(void)
 
     kfree(free_blocks);
 
-    return 0;   
-    
+    return 0;    
 }
 
 
@@ -170,27 +216,28 @@ void wake_up_umount(void)
 
 
 /*
- * Questa funzione esegue il flush dei blocchi di stato sul
- * device. In questo modo, al successivo montaggio, sono in
- * grado di stabilire quali sono i blocchi validi.
+ * flush_bitmask - Riporta le modifiche sul dispositivo rilasciando la memoria del page cache
+ *
+ * La funzione restituisce il valore 0 in caso di successo; altrimenti restituisce il valore 1.
  */
-int flush_bitmask(void)
+static int flush_bitmask(void)
 {
-    struct soafs_sb_info *sbi;
-    struct buffer_head *bh;
     uint64_t counter;
     uint64_t num_block_state;
-    uint64_t *b;
-    int i;
+    struct soafs_sb_info *sbi;
+    struct buffer_head *bh;
 
+    /* Recupero il numero dei blocchi di stato */
     sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
 
     num_block_state = sbi->num_block_state;
 
+    /* Tengo traccia del numero dei blocchi di stato che ho correttamente gestito */
     counter = 0;
 
     while(counter < num_block_state)
     {
+        /* Leggo il blocco di stato */
         bh = sb_bread(sb_global, 2 + counter);
 
         if(bh == NULL)
@@ -199,26 +246,19 @@ int flush_bitmask(void)
             return 1;
         }
 
-        b = (uint64_t *)bh->b_data;
-
-        for(i = 0; i < 512; i++)
-        {
-            b[i] = bitmask[counter][i];
-        }
-
         mark_buffer_dirty(bh);
 
         sync_dirty_buffer(bh);
 
-#ifdef NOT_CRITICAL_INIT
         printk("%s: [SMONTAGGIO - FLUSH BITMASK] Flush dei dati per il blocco di stato #%lld avvenuto con successo\n", MOD_NAME, counter);        
-#endif
+
         counter++;
 
+        /* Rilascio la memoria al page cache */
         brelse(bh);
     }
 
-    printk("%s: [SMONTAGGIO - FLUSH BITMASK] Blocchi di stato flushati correttamente: %lld/%lld\n", MOD_NAME, counter, num_block_state);
+    printk("%s: [SMONTAGGIO - FLUSH BITMASK] Numero dei blocchi di stato flushati correttamente: %lld/%lld\n", MOD_NAME, counter, num_block_state);
 
     return 0;
 }
@@ -226,56 +266,71 @@ int flush_bitmask(void)
 
 
 /*
- * Questa funzione ha il compito di riportare i messaggi utente
- * validi all'interno dei corrispettivi blocchi del device.
+ * flush_valid_block - Riporta sul dispositivo il contenuto dei blocco validi.
+ * 
+ * Questa funzione ha il compito di riportare i messaggi utente validi all'interno dei
+ * corrispondenti blocchi nel dispositivo.
+ *
+ * Restituisce il valore 0 in caso di successo; altrimenti, viene restituito il valore 1.
  */
-int flush_valid_block(void)
+static int flush_valid_block(void)
 {
+    uint64_t index;
+    uint64_t num_block_state;
+    uint64_t pos;
     struct buffer_head *bh;
     struct block *curr;
     struct soafs_sb_info *sbi;
     struct soafs_block *b;
-    uint64_t index;
-    uint64_t num_block_state;
-    uint64_t pos;
 
+    /* Recupero il riferimento alla testa della Sorted List */
     curr = head_sorted_list;
 
     if(curr == NULL)
     {
-        printk("%s: [SMONTAGGIO - FLUSH VALID BLOCK] Non ci sono messaggi validi da riportare\n", MOD_NAME);
+        printk("%s: [SMONTAGGIO - FLUSH VALID BLOCK] Non ci sono messaggi validi da riportare sul dispositivo\n", MOD_NAME);
         return 0;
     }
 
+    /* Recupero il numero dei blocchi di stato nel dispositivo */
     sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
 
     num_block_state = sbi->num_block_state;
     
+    /* Questa variabile mi consente di costruire la nuova sequenza dei messaggi validi */
     pos = 0;
     
     while(curr != NULL)
     {
+        /* Recupero l'indice del blocco di dati */
         index = curr->block_index;
+
 #ifdef NOT_CRITICAL_INIT
         printk("%s: [SMONTAGGIO - FLUSH VALID BLOCK]  Il blocco con indice %lld deve essere riportato su device\n", MOD_NAME, index);
 #endif
+
         bh = sb_bread(sb_global, 2 + num_block_state + index);
+
+        if(bh == NULL)
+        {
+            printk("%s: [ERRORE SMONTAGGIO - FLUSH VALID BLOCK] Lettura del blocco #%lld dal page cache fallita\n", MOD_NAME, index);
+            return 1;
+        }
 
         b = (struct soafs_block *)bh->b_data;
 
+        /* Modifico il metadato che rappresenta la posizione del blocco nella lista ordinata */
         b->pos = pos;
-
-        strncpy(b->msg, curr->msg, strlen(curr->msg) + 1);
 
         mark_buffer_dirty(bh);
 
-        sync_dirty_buffer(bh);        
+        sync_dirty_buffer(bh);       
+
+        brelse(bh); 
 
         curr = curr->sorted_list_next;
 
         pos++;
-
-        brelse(bh);
     }
 
     printk("%s: [SMONTAGGIO - FLUSH VALID BLOCK] I blocchi validi sono stati riportati correttamente su device\n", MOD_NAME);
@@ -286,123 +341,81 @@ int flush_valid_block(void)
 
 
 /*
- * Questa funzione ha il compito di deallocare le strutture
- * dati core che sono state utilizzate per l'attuale istanza
- * di montaggio del FS.
- * Una nuova istanza di montaggio del FS necessiterà di nuove
- * strutture dati.
+ * free_all_memory - Dealloca le strutture dati core del modulo
+ * 
+ * Questa funzione ha il compito di deallocare le strutture dati core che sono
+ * state utilizzate per l'attuale istanza di montaggio del FS. Le strutture dati
+ * che devono essere deallocate sono la lista dei blocchi liberi e la Sorted List.
+ *
+ * La funzione non restituisce alcun valore.
  */
 void free_all_memory(void)
 {
     struct block_free *next_bf;
     struct block *next_b;
-    struct soafs_sb_info *sbi;
-    uint64_t num_block_state;
-    int index;
 
     /* Deallocazione degli elementi nella lista dei blocchi liberi */
-    if(head_free_block_list!=NULL)
-    {
-        printk("%s: [SMONTAGGIO - FREE MEMORY] La lista dei blocchi liberi non è vuota... inizio deallocazione in corso...\n", MOD_NAME);
 
-        while(head_free_block_list!=NULL)
-        {
-            next_bf = head_free_block_list->next;
+    printk("%s: [SMONTAGGIO - FREE MEMORY] Inizio deallocazione della lista dei blocchi liberi...\n", MOD_NAME);
+
+    while(head_free_block_list != NULL)
+    {
+        next_bf = head_free_block_list->next;
 
 #ifdef NOT_CRITICAL_INIT
-            printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione blocco #%lld...\n", MOD_NAME, head_free_block_list->block_index);
+        printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione blocco #%lld...\n", MOD_NAME, head_free_block_list->block_index);
 #endif
 
-            kfree(head_free_block_list);
+        kfree(head_free_block_list);
 
 #ifdef NOT_CRITICAL_INIT
-            printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione blocco #%lld avvenuta con successo\n", MOD_NAME, head_free_block_list->block_index);
+        printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione blocco #%lld avvenuta con successo\n", MOD_NAME, head_free_block_list->block_index);
 #endif
 
-            head_free_block_list = next_bf;
-        }
-
-        printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione dei blocchi dalla lista libera completata con successo\n", MOD_NAME);        
+        head_free_block_list = next_bf;
     }
 
-    /* Setto a NULL la testa delle liste nella HT */
-    for(index=0;index<x;index++)
-    {
-        (&hash_table_valid[index])->head_list = NULL;
-    }
+    printk("%s: [SMONTAGGIO - FREE MEMORY] La deallocazione dei blocchi dalla lista libera è stata completata con successo\n", MOD_NAME);        
 
     /* Dealloco gli elementi che rappresentano i blocchi validi */
-    if(head_sorted_list != NULL)
+
+    printk("%s: [SMONTAGGIO - FREE MEMORY] Inizio deallocazione della lista ordinata...\n", MOD_NAME);
+
+    while(head_sorted_list != NULL)
     {
-
-        printk("%s: [SMONTAGGIO - FREE MEMORY] La lista dei blocchi ordinati non è vuota... inizio deallocazione in corso...\n", MOD_NAME);
-
-        while(head_sorted_list != NULL)
-        {
-            next_b = head_sorted_list->sorted_list_next;
+        next_b = head_sorted_list->sorted_list_next;
 
 #ifdef NOT_CRITICAL_INIT
-            printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione blocco #%lld...\n", MOD_NAME, head_sorted_list->block_index);
+        printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione blocco #%lld...\n", MOD_NAME, head_sorted_list->block_index);
 #endif
 
-            kfree(head_sorted_list);
+        kfree(head_sorted_list);
 
 #ifdef NOT_CRITICAL_INIT
-            printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione blocco #%lld avvenuta con successo\n", MOD_NAME, head_sorted_list->block_index);
+        printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione blocco #%lld avvenuta con successo\n", MOD_NAME, head_sorted_list->block_index);
 #endif
 
-            head_sorted_list = next_b;
-        }
-    
-        printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione dei blocchi dalla lista ordinata completata con successo\n", MOD_NAME);
+        head_sorted_list = next_b;
     }
-
-    /* Dealloco la tabella hash */
-    kfree(hash_table_valid);
-
-    hash_table_valid = NULL;
     
-    printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione della HT avvenuta con successo\n", MOD_NAME);
+    printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione dei blocchi dalla lista ordinata completata con successo\n", MOD_NAME);
 
-    /* Dealloco la maschera di bit */
-    sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
-
-    num_block_state = sbi->num_block_state;
-
-    for(index=0; index<num_block_state; index++)
-    {
-        kfree(bitmask[index]);
-    }
-
-    kfree(bitmask);
-
-    bitmask = NULL;
-
-    printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione della BITMASK avvenuta con successo\n", MOD_NAME);
+    /* Eseguo degli ulteriori check per verificare che le strutture dati siano state deallocate con successo */
 
     if(head_free_block_list != NULL)
-    {
         printk("%s: [ERRORE SMONTAGGIO - FREE MEMORY] La lista dei blocchi liberi non è vuota\n", MOD_NAME);
-    }
 
     if(head_sorted_list != NULL)
-    {
         printk("%s: [ERRORE SMONTAGGIO - FREE MEMORY] La lista dei blocchi ordinata non è vuota\n", MOD_NAME);
-    }
-
 }
 
 
 
 int house_keeper(void *arg)
 {
-    int index_ht;
     int index_sorted;
-    unsigned long updated_epoch_ht;
     unsigned long updated_epoch_sorted;
-    unsigned long last_epoch_ht;
     unsigned long last_epoch_sorted;
-    unsigned long grace_period_threads_ht;
     unsigned long grace_period_threads_sorted;
     uint64_t num_insert;
 
@@ -463,45 +476,36 @@ retry_house_keeper:
      * Durante il processo di invalidazione non è possibile
      * avere in concorrenza l'inserimento di un nuovo blocco.
      */
-    updated_epoch_ht = (gp->next_epoch_index_ht) ? MASK : 0;
     updated_epoch_sorted = (gp->next_epoch_index_sorted) ? MASK : 0;
 
-    gp->next_epoch_index_ht += 1;
-    gp->next_epoch_index_ht %= 2;
     gp->next_epoch_index_sorted += 1;
     gp->next_epoch_index_sorted %= 2;
 
-    last_epoch_ht = __atomic_exchange_n (&(gp->epoch_ht), updated_epoch_ht, __ATOMIC_SEQ_CST);
     last_epoch_sorted = __atomic_exchange_n (&(gp->epoch_sorted), updated_epoch_sorted, __ATOMIC_SEQ_CST);
 
-    index_ht = (last_epoch_ht & MASK) ? 1:0;
     index_sorted = (last_epoch_sorted & MASK) ? 1:0;
 
-    grace_period_threads_ht = last_epoch_ht & (~MASK);
     grace_period_threads_sorted = last_epoch_sorted & (~MASK);
 
 #ifdef NOT_CRITICAL_HK
-    printk("%s: [HOUSE KEEPER] Attesa della terminazione del grace period HT: #threads %ld\n", MOD_NAME, grace_period_threads_ht);
     printk("%s: [HOUSE KEEPER] Attesa della terminazione del grace period lista ordinata: #threads %ld\n", MOD_NAME, grace_period_threads_sorted);
 #endif
 
 sleep_again:
 
-    wait_event_interruptible_timeout(the_queue, (gp->standing_ht[index_ht] >= grace_period_threads_ht) && (gp->standing_sorted[index_sorted] >= grace_period_threads_sorted), msecs_to_jiffies(100));
+    wait_event_interruptible_timeout(the_queue, gp->standing_sorted[index_sorted] >= grace_period_threads_sorted, msecs_to_jiffies(100));
 
 #ifdef NOT_CRITICAL_BUT_HK
-    printk("%s: gp->standing_ht[index_ht] = %ld\tgrace_period_threads_ht = %ld\tgp->standing_sorted[index_sorted] = %ld\tgrace_period_threads_sorted = %ld\n", MOD_NAME, gp->standing_ht[index_ht], grace_period_threads_ht, gp->standing_sorted[index_sorted], grace_period_threads_sorted);
+    printk("%s: gp->standing_sorted[index_sorted] = %ld\tgrace_period_threads_sorted = %ld\n", MOD_NAME, gp->standing_sorted[index_sorted], grace_period_threads_sorted);
 #endif
 
-    if((gp->standing_ht[index_ht] < grace_period_threads_ht) || (gp->standing_sorted[index_sorted] < grace_period_threads_sorted))
+    if(gp->standing_sorted[index_sorted] < grace_period_threads_sorted)
     {
         printk("%s: [ERRORE HOUSE KEEPER] Il thread demone va nuovamente a dormire\n", MOD_NAME);
         goto sleep_again;
     }
 
     gp->standing_sorted[index_sorted] = 0;
-
-    gp->standing_ht[index_ht] = 0;
 
     __atomic_exchange_n (&(sync_var), 0X0000000000000000, __ATOMIC_SEQ_CST);
 
@@ -542,92 +546,83 @@ int new_thread_daemon(void)
 
 
 
-
 static int soafs_fill_super(struct super_block *sb, void *data, int silent) {   
-
-    struct inode *root_inode;
-    struct dentry *root_dentry;
-    struct soafs_super_block *sb_disk;
-    struct timespec64 curr_time;
-    struct buffer_head *bh;
-    struct soafs_sb_info *sbi; 
-    int ret;
-
     
-    /* Imposto la dimensione del superblocco pari a 4KB. */
+    int ret;
+    struct buffer_head *bh;
+    struct soafs_super_block *sb_disk;
+    struct soafs_sb_info *sbi;
+    struct inode *root_inode;
+    struct timespec64 curr_time; 
+    struct dentry *root_dentry;
+    
+    /* Imposto la dimensione del superblocco pari a 4KB */
     if(sb_set_blocksize(sb, SOAFS_BLOCK_SIZE) == 0)
     {
-        printk("%s: [ERRORE MONTAGGIO] Errore nel setup della dimensione del superblocco.\n", MOD_NAME);
-
+        printk("%s: [ERRORE MONTAGGIO] Errore nel setup della dimensione del superblocco\n", MOD_NAME);
         is_free = 1;
-
         return -EIO;
     }
    
     /*
      * Il Superblocco è il primo blocco memorizzato sul device.
-     * Di conseguenza, l'indice che deve essere utilizzato con la
+     * Di conseguenza, l'indice che deve essere utilizzato nella
      * sb_bread ha valore pari a zero.
      */
     bh = sb_bread(sb, SOAFS_SB_BLOCK_NUMBER);
 
     if(bh == NULL){
-        printk("%s: [ERRORE MONTAGGIO] Errore nella lettura del superblocco.\n", MOD_NAME);
-
+        printk("%s: [ERRORE MONTAGGIO] Errore nella lettura del superblocco dal dispositivo\n", MOD_NAME);
         is_free = 1;
-
 	    return -EIO;
     }
 
-    /* Recupero il superblocco memorizzato sul device. */
+    /* Recupero il superblocco memorizzato sul device */
     sb_disk = (struct soafs_super_block *)bh->b_data;  
 
-    /* Faccio il check per verificare se il numero di blocchi nel dispositivo è valido. */
+    /*
+     * Faccio il check per verificare se il numero dei blocchi nel dispositivo è valido:
+     * 1. Il numero totale dei blocchi non deve essere maggiore del massimo numero gestibile
+     * 2. Deve esserci almeno un blocco di dati all'interno del dispositivo
+     */
     if( (sb_disk->num_block > NBLOCKS) || ((sb_disk->num_block - sb_disk->num_block_state - 2) <= 0) )
     {
-        printk("%s: [ERRORE MONTAGGIO] Il numero di blocchi del dispositivo non è valido.\n", MOD_NAME);
-
+        printk("%s: [ERRORE MONTAGGIO] Il numero dei blocchi del dispositivo non è valido.\n", MOD_NAME);
         brelse(bh);
-
         is_free = 1;
-
         return -EINVAL;
     }
 
-    /* Verifico il valore del magic number presente nel superblocco sul device. */
+    /* Verifico il valore del magic number presente nel superblocco del device */
     if(sb_disk->magic != SOAFS_MAGIC_NUMBER)
     {
-        printk("%s: [ERRORE MONTAGGIO] Mancata corrispondenza tra i due magic number.\n", MOD_NAME);
-
+        printk("%s: [ERRORE MONTAGGIO] Mancata corrispondenza tra i due magic number\n", MOD_NAME);
         brelse(bh);
-
         is_free = 1;
-
 	    return -EBADF;
     }
 
-    /* Popolo la struttura dati del superblocco generico. */
+    /* Popolo la struttura dati del superblocco generico */
     sb->s_magic = SOAFS_MAGIC_NUMBER;
     sb->s_op = &soafs_super_ops;
 
-    /* Recupero informazioni FS specific. */
+    /* Recupero le informazioni FS specific */
     sbi = (struct soafs_sb_info *)kzalloc(sizeof(struct soafs_sb_info), GFP_KERNEL);
 
     if(sbi == NULL)
     {
-        printk("%s: [ERRORE MONTAGGIO] Errore kzalloc() nell'allocazione della struttura dati soafs_sb_info.\n", MOD_NAME);
-
+        printk("%s: [ERRORE MONTAGGIO] Errore esecuzione kzalloc() nell'allocazione della struttura dati FS Specific\n", MOD_NAME);
         brelse(bh);
-
         is_free = 1;
-
         return -ENOMEM;
     }
 
-    sbi->num_block = sb_disk->num_block;
-    sbi->num_block_free = sb_disk->num_block_free;
-    sbi->num_block_state = sb_disk->num_block_state;
-    sbi->update_list_size = sb_disk->update_list_size;
+    /* Popolo la struttura dati con le informazioni FS Specific */
+
+    sbi->num_block = sb_disk->num_block;                // Numero totale dei blocchi del dispositivo
+    sbi->num_block_free = sb_disk->num_block_free;      // Numero totale dei blocchi liberi all'istante di montaggio
+    sbi->num_block_state = sb_disk->num_block_state;    // Numero totale dei blocchi di stato
+    sbi->update_list_size = sb_disk->update_list_size;  // Numero massimo di blocchi da ricaricare nella lista
 
     sb->s_fs_info = sbi;
 
@@ -641,14 +636,10 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
 
     if(!root_inode)
     {
-        printk("%s: [ERRORE MONTAGGIO] Errore nel recupero del root inode.\n", MOD_NAME);
-
+        printk("%s: [ERRORE MONTAGGIO] Errore nel recupero del root inode\n", MOD_NAME);
         brelse(bh);
-
         kfree(sbi);
-
         is_free = 1;
-
         return -ENOMEM;
     }
 
@@ -673,14 +664,10 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
 
     if (!root_dentry)
     {
-        printk("%s: [ERRORE MONTAGGIO] Errore nella creazione della root directory.\n", MOD_NAME);
-
+        printk("%s: [ERRORE MONTAGGIO] Errore nella creazione della root directory\n", MOD_NAME);
         brelse(bh);
-
         kfree(sbi);
-
         is_free = 1;
-
         return -ENOMEM;
     }
 
@@ -692,45 +679,41 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     /* Prendo il riferimento al superblocco */
     sb_global = sb;
 
+    /* Inizializzo le strutture dati core del modulo */
     ret = init_data_structure_core(sb_disk->num_block - sb_disk->num_block_state - 2, sb_disk->index_free, sb_disk->actual_size);
 
     if(ret)
     {
-        printk("%s: [ERRORE MONTAGGIO] Errore nella inizializzazione delle strutture dati core del modulo.\n", MOD_NAME);
-
+        printk("%s: [ERRORE MONTAGGIO] Errore nella inizializzazione delle strutture dati core del modulo\n", MOD_NAME);
         brelse(bh);
-
         kfree(sbi);
-
+        is_free = 1;
         return -EIO;
     }
 
+    /* Gestisco la creazione del thread demone */
     ret = __sync_bool_compare_and_swap(&kernel_thread_ok, 0, 1);
 
     if(!ret)
     {
-        printk("%s: [ERRORE MONTAGGIO] Il thread demone esiste già...\n", MOD_NAME);
-        goto exit_mont;
+        printk("%s: [MONTAGGIO] Il thread demone è stato creato precedentemente\n", MOD_NAME);
+        goto exit_mount;
     }
 
+    /* Creazione del thread demone */
     ret = new_thread_daemon();
 
     if(ret)
     {
         printk("%s: [ERRORE MONTAGGIO] Errore nella creazione del thread demone\n", MOD_NAME);
-
         brelse(bh);
-
         free_all_memory();
-
         kfree(sbi);
-
         is_free = 1;
-
         return -EIO;        
     }
 
-exit_mont:
+exit_mount:
 
     /* Rilascio del superblocco */
     brelse(bh);
@@ -750,39 +733,43 @@ static void soafs_kill_sb(struct super_block *sb)
 
     printk("%s: [SMONTAGGIO] Inizio smontaggio del FS...", MOD_NAME);
 
+    /* Gestisco eventuali smontaggi che eseguono in concorrenza */
+
+    ret = __sync_bool_compare_and_swap(&(is_mounted), 1, 0);
+
+    if(!ret)
+        goto exit_umount_soafs;
+
+    /* Attendo che i threads in esecuzione terminino di lavorare sul FS */
+
+    if(num_threads_run > 0)
+        wait_event_interruptible(umount_queue, num_threads_run == 0);
+
+    /* La variabile is_free è settata a 1 nel momento in cui non si deve eseguire il processo di
+     * deallocazione delle strutture dati. Le strutture dati sono state precedentemente deallocate
+     * e non ci sono informazioni che devono essere riportate sul dispositivo.
+     */
+
     if(is_free)
     {
         printk("%s: [SMONTAGGIO] Le strutture dati sono state già deallocate e il FS non è stato utilizzato\n", MOD_NAME);
         goto exit_kill_sb;
     }
 
-    ret = __sync_bool_compare_and_swap(&(stop), 0, 1);
+    n = 0;
 
-    if(!ret)
+retry_set_free_block:
+
+    ret = set_free_block();
+
+    if(ret)
     {
-        return ;
-    }
-
-    ret = __sync_bool_compare_and_swap(&(is_mounted), 1, 0);
-
-    if(!ret)
-    {
-        printk("%s: [ERRORE SMONTAGGIO] Il valore della variabile is_mounted non è corretto\n", MOD_NAME);
-        return ;
-    }
-
-umount_retry_running:
-
-    if(num_threads_run > 0)
-    {
-        wait_event_interruptible_timeout(umount_queue, num_threads_run == 0, msecs_to_jiffies(100));
-
         n++;
-
-        goto umount_retry_running;
+        printk("%s: [ERRORE SMONTAGGIO] Tentativo numero %d fallito per il settaggio dei blocchi liberi\n", MOD_NAME, n);
+        goto retry_set_free_block;
     }
 
-    printk("%s: Il numero di tentativi richiesto per lo smontaggio è pari a %d\n", MOD_NAME, n);
+    printk("%s: Settaggio dei blocchi liberi per il montaggio successivo eseguito con successo\n", MOD_NAME);
 
     n = 0;
 
@@ -801,22 +788,7 @@ retry_flush_bitmask:
 
     n = 0;
 
-retry_set_free_block:
-
-    ret = set_free_block();
-
-    if(ret)
-    {
-        n++;
-        printk("%s: [ERRORE SMONTAGGIO] Tentativo numero %d fallito per il settaggio dei blocchi liberi\n", MOD_NAME, n);
-        goto retry_set_free_block;
-    }
-
-    printk("%s: Settaggio dei blocchi liberi eseguito con successo\n", MOD_NAME);
-
-    n = 0;
-
-retry_umount:
+retry_flush_valid_block:
 
     ret = flush_valid_block();
 
@@ -824,12 +796,14 @@ retry_umount:
     {
         n++;
         printk("%s: [ERRORE SMONTAGGIO] Tentativo numero %d fallito per il salvataggio dei blocchi validi\n", MOD_NAME, n);
-        goto retry_umount;
+        goto retry_flush_valid_block;
     }
 
     printk("%s: Flush dei blocchi validi eseguito con successo\n", MOD_NAME);
 
     free_all_memory();
+
+    printk("%s: Le strutture dati core del modulo sono state deallocate con successo\n", MOD_NAME);
 
 exit_kill_sb:
 
@@ -837,9 +811,13 @@ exit_kill_sb:
 
     is_free = 0;
 
-    sync_var = 0;
+//    sync_var = 0;
 
     printk("%s: [SMONTAGGIO] Il File System 'soafs' è stato smontato con successo.\n", MOD_NAME);
+
+exit_umount_soafs:
+
+    return;
 }
 
 
@@ -849,35 +827,30 @@ static struct dentry *soafs_mount(struct file_system_type *fs_type, int flags, c
     int ret_cmp;
     struct dentry *ret;
 
+    /*
+     * Permetto un singolo montaggio alla volta. Se il valore della variabile'is_mounted' è pari a 0
+     * allora significa che il thread può provare a montare il FS; altrimenti, il FS è stato già montato
+     * oppure è in corso il montaggio per opera di qualche altro thread.
+     */
+
     ret_cmp = __sync_bool_compare_and_swap(&is_mounted, 0, 1);
 
     if(!ret_cmp)
     {
-        printk("%s: [ERRORE MONTAGGIO] Esiste già un altro montaggio del file system di tipo %s\n", MOD_NAME, fs_type->name);
+        printk("%s: [ERRORE MONTAGGIO] Il FS '%s'è stato già montato oppure il montaggio è in corso\n", MOD_NAME, fs_type->name);
         return ERR_PTR(-EINVAL);
     }
     
-    ret = mount_bdev(fs_type, flags, dev_name, data, soafs_fill_super);         /* Monta un file system memorizzato su un block device */
+    ret = mount_bdev(fs_type, flags, dev_name, data, soafs_fill_super);     /* Monta un file system memorizzato su un block device */
 
     if (unlikely(IS_ERR(ret)))
     {
-        printk("%s: [ERRORE MONTAGGIO] Errore durante il montaggio del File System 'soafs'.\n",MOD_NAME);
+        __sync_fetch_and_sub(&is_mounted,1);                /* Riporto il valore della variabile 'is_mounted' a 0 */
 
-        __sync_fetch_and_sub(&is_mounted,1);
+        printk("%s: [ERRORE MONTAGGIO] Errore durante il montaggio del File System di tipo %s\n",MOD_NAME, fs_type->name);
     }
     else
     {
-
-        printk("%s: Numero di thread in esecuzione pari a %lld\n", MOD_NAME, num_threads_run);
-
-        ret_cmp = __sync_bool_compare_and_swap(&stop, 1, 0);
-
-        if(!ret_cmp)
-        {
-            printk("%s: [ERRORE MONTAGGIO] La barriera per lo stop dello smontaggio non è settata correttamente\n", MOD_NAME);
-            return ERR_PTR(-EINVAL);
-        }  
-
         printk("%s: [MONTAGGIO] Montaggio del File System sul device %s avvenuto con successo.\n",MOD_NAME,dev_name);
     }
 

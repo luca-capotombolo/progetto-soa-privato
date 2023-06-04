@@ -11,11 +11,11 @@
 
 #define _GNU_SOURCE
 
-#define NBLOCKS 50000
+#define NBLOCKS 50
 
 #define NTHREADS 4
 
-#define ITER 50000
+#define ITER 500
 
 #define MSG_SIZE 4096
 

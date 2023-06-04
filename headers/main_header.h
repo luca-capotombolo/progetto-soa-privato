@@ -80,7 +80,7 @@ extern uint64_t sync_var;
 
 extern uint64_t num_threads_run;
 
-extern int stop;
+// extern int stop;
 
 static DEFINE_MUTEX(inval_insert_mutex);
 

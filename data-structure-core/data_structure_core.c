@@ -10,24 +10,28 @@
 
 struct block *head_sorted_list = NULL;              /* Puntatore alla testa della lista contenente i blocchi nell'ordine di consegna */
 struct block_free *head_free_block_list = NULL;     /* Puntatore alla testa della lista contenente i blocchi liberi */
-struct ht_valid_entry *hash_table_valid = NULL;     /* Hash table */
+struct grace_period *gp = NULL;                     /* Strtuttura dati per il Grace Period */
+
 uint64_t num_block_free_used = 0;                   /* Numero di blocchi liberi al tempo di montaggio caricati nella lista */
 uint64_t pos = 0;                                   /* Indice da cui iniziare la ricerca dei nuovi blocchi liberi */
-uint64_t**bitmask = NULL;                           /* Bitmask */
-int x = 0;                                          /* Numero righe della Tabella Hash */
-struct grace_period *gp = NULL;                     /* Strtuttura dati per il Grace Period */
 uint64_t sync_var = 0;                              /* Variabile per la sincronizzazione inserimenti-invalidazioni */
 
 
 
-
-void scan_free_list(void)
+/*
+ * scan_free_list - Esegue la scansione della struttura dati free_block_list
+ *
+ * Questa funzione ha prevalentemente uno scopo per il debugging del modulo
+ * 
+ * La funzione non restituisce alcun valore.
+ */
+static void scan_free_list(void)
 {
     struct block_free *curr;
 
     curr = head_free_block_list;
 
-    printk("%s: ------------------------------ INIZIO FREE LIST ------------------------------------------", MOD_NAME);
+    printk("\n\n%s: ------------------------------ INIZIO FREE LIST ---------------------------------------", MOD_NAME);
 
     while(curr!=NULL)
     {
@@ -35,12 +39,20 @@ void scan_free_list(void)
         curr = curr->next;
     }
 
-    printk("%s: ---------------------------- FINE FREE LIST ----------------------------------------------", MOD_NAME);
+    printk("%s: -------------------------------  FINE FREE LIST  ---------------------------------------\n\n", MOD_NAME);
 }
 
 
 
-void scan_sorted_list(void)
+
+/*
+ * scan_sorted_list - Esegue la scansione della struttura dati Sorted List
+ *
+ * Questa funzione ha prevalentemente uno scopo per il debugging del modulo
+ * 
+ * La funzione non restituisce alcun valore.
+ */
+static void scan_sorted_list(void)
 {
     struct block *curr;
 
@@ -50,138 +62,30 @@ void scan_sorted_list(void)
 
     while(curr!=NULL)
     {
-        printk("Blocco #%lld - Messaggio %s\n", curr->block_index, curr->msg);
+        printk("Blocco #%lld\n", curr->block_index);
         curr = curr->sorted_list_next;
     }
 
-    printk("%s: ---------------------------------- FINE SORTED LIST   ---------------------------------------------", MOD_NAME);
+    printk("%s: ----------------------------------  FINE SORTED LIST  ---------------------------------------------", MOD_NAME);
     
 }
 
 
 
-void scan_hash_table(void)
-{
-    int entry_num;
-    struct ht_valid_entry entry;
-    struct block *item;
-    
-    printk("%s:-------------------------- INIZIO HASH TABLE --------------------------------------------------\n", MOD_NAME);
-
-    for(entry_num=0; entry_num<x; entry_num++)
-    {
-        printk("%s: ----------------------------- %d --------------------------------", MOD_NAME, entry_num);
-        entry = hash_table_valid[entry_num];
-        item = entry.head_list;
-
-        while(item!=NULL)
-        {
-            printk("%s: Blocco #%lld\n", MOD_NAME, item->block_index);
-            item = item ->hash_table_next;
-        }
-
-        printk("%s: -------------------------------------------------------------------", MOD_NAME);
-        
-    }
-
-    printk("%s: -------------------------- FINE HASH TABLE ---------------------------------------------------\n", MOD_NAME);
-}
-
-
-
-void debugging_init(void)
+/*
+ * debugging_init - Esegue la scansione delle strutture dati core del modulo
+ *
+ * Questa funzione ha prevalentemente uno scopo per il debugging del modulo
+ * 
+ * La funzione non restituisce alcun valore.
+ */
+static void debugging_init(void)
 {
     /* scansione della lista contenente le informazioni dei blocchi liberi. */
     scan_free_list();
 
     /* scansione della lista contenente i blocchi ordinati per inserimento. */
     scan_sorted_list();
-
-    /* scansione delle liste della hash table */
-    scan_hash_table();
-}
-
-
-
-/*
- * Computa il numero di righe della tabella hash
- * applicando la formula. Si cerca di avere un numero
- * logaritmico di elementi per ogni lista della
- * hast_table_valid.
- */
-void compute_num_rows(uint64_t num_data_block)
-{
-    int list_len;
-    
-    if(num_data_block == 1)
-    {
-        x = 1;      /* Non devo applicare la formula e ho solamente una lista */
-    }
-    else
-    {
- 
-        list_len = ilog2(num_data_block) + 1;    /* Computo il numero di elementi massimo che posso avere in una lista */
-
-        if((num_data_block % list_len) == 0)
-        {
-            x = num_data_block / list_len;
-        }
-        else
-        {
-            x = (num_data_block / list_len) + 1;
-        }
-    }
-
-    printk("%s: [COMPUTAZIONE NUMERO RIGHE] La lunghezza massima di una entry della tabella hash è pari a %d.\n", MOD_NAME, list_len);
-    printk("%s: [COMPUTAZIONE NUMERO RIGHE] Il numero di entry nella tabella hash è pari a %d.\n", MOD_NAME, x);
-}
-
-
-
-/*
- * Questa funzione ha il compito di recuperare il messaggio
- * all'interno del blocco con indice pari a offset.
- */
-char * read_data_block(uint64_t offset, struct ht_valid_entry *entry)
-{
-
-    struct block *item;
-    char *str;
-    size_t len;
-
-    item = entry->head_list;
-
-    while(item!=NULL)
-    {
-        if(item->block_index == offset)
-            break;
-        
-        item = item ->hash_table_next;
-    }
-
-    if(item == NULL)
-    {
-
-#ifdef NOT_CRITICAL_BUT_GET
-        printk("%s: [ERRORE GET DATA] Il blocco richiesto %lld è stato invalidato in concorrenza\n", MOD_NAME, offset);
-#endif
-
-        return NULL;
-    }
-    
-    len = strlen(item->msg)+1;
-
-    str = (char *)kmalloc(len, GFP_KERNEL);
-
-    if(str==NULL)
-    {
-        printk("%s: [ERRORE GET DATA] Errore esecuzoine malloc() per la copia della stringa blocco %lld\n", MOD_NAME, offset);
-        return NULL;
-    }
-
-    strncpy(str, item->msg, len);
-
-    return str;
 }
 
 
@@ -213,546 +117,31 @@ retry_insert_free_list_conc:
 
 
 /*
- * Eliminazione del blocco con indice passato come parametro
- * sia dalla lista nella HT che dalla lista ordinata.
+ * check_consistenza - Controllo sull'inizializzazione della lista dei blocchi liberi
+ * 
+ * Questa funzione implementa un semplice controllo sulla consistenza delle informazioni
+ * presenti nella lista dei blocchi liberi rispetto alle informazioni mantenute nella
+ * bitmask. Gli indici dei blocchi inseriti all'interno della lista devono avere il
+ * corrispondente bit della bitmask pari a 0.
+ *
+ * La funzione non restituisce alcun valore
  */
-struct result_inval * remove_block(uint64_t index)
+static void check_consistenza(void)
 {
-    int num_entry_ht;
-    struct ht_valid_entry *ht_entry;
-    struct block *next;
-    struct block *curr;
-    struct block *prev;
-    struct result_inval *res_inval;
-
-    res_inval = (struct result_inval *)kmalloc(sizeof(struct result_inval), GFP_KERNEL);
-
-    if(res_inval == NULL)
-    {
-        printk("%s: [ERRORE INVALIDATE DATA - REMOVE] Errore esecuzione kmalloc() nella invalidazione del blocco %lld\n", MOD_NAME, index);
-
-        return NULL;
-    }
-    
-
-    /* Identifico la lista corretta nella hash table per effettuare l'inserimento */
-    num_entry_ht = index % x;
-
-    ht_entry = &(hash_table_valid[num_entry_ht]);
-
-    curr = ht_entry->head_list;
-
-    /* Gestione di invalidazioni */
-    if(curr == NULL)
-    {
-
-#ifdef NOT_CRITICAL_BUT_INVAL
-        printk("%s: [ERRORE INVALIDATE DATA - REMOVE] La lista #%d nella HT risulta essere vuota\n", MOD_NAME, num_entry_ht);
-#endif
-
-        res_inval->code = 2;
-
-        res_inval->block = NULL;
-
-        return res_inval;
-    }
-
-    if(curr->block_index == index)
-    {
-        ht_entry->head_list = curr->hash_table_next;
-
-        asm volatile ("mfence");
-
-#ifdef NOT_CRITICAL_INVAL
-        printk("%s: [INVALIDATE DATA - REMOVE] Il blocco %lld richiesto per l'invalidazione è stato eliminato con successo dalla lista nella HT\n", MOD_NAME, index);
-#endif
-
-        goto remove_sorted_list;
-    }
-
-    prev = curr;
-
-    curr = prev->hash_table_next;
-
-    /*
-     * Ricerco il blocco richiesto da invalidare nella
-     * corretta lista della HT.
-     */
-    while(curr != NULL)
-    {
-        if(curr->block_index == index)
-        {
-
-#ifdef NOT_CRITICAL_INVAL
-            printk("%s: [INVALIDATE DATA - REMOVE] Il blocco %lld da invalidare è stato trovato con successo nella lista della HT\n", MOD_NAME, index);
-#endif
-
-            next = curr->hash_table_next;
-
-            break;
-        }
-        prev = curr;
-
-        curr = curr->hash_table_next;
-    }
-
-    if( curr == NULL )
-    {
-
-#ifdef NOT_CRITICAL_BUT_INVAL
-        printk("%s: [ERRORE INVALIDATE DATA - REMOVE] Il blocco %lld richiesto per l'invalidazione non è presente nella lista #%d della HT\n", MOD_NAME, index, num_entry_ht);
-#endif
-
-        res_inval->code = 2;
-
-        res_inval->block = NULL;
-
-        return res_inval;
-    }
-
-    prev->hash_table_next = next;
-
-    asm volatile ("mfence");
-
-#ifdef NOT_CRITICAL_INVAL
-    printk("%s: [INVALIDAZIONE] Il blocco %lld richiesto per l'invalidazione è stato eliminato con successo dalla lista nella HT\n", MOD_NAME, index);
-#endif
-
-remove_sorted_list:
-
-    /* 
-     * Verifico se il primo blocco nella lista ordinata
-     * è quello richiesto da eliminare. La lista non può
-     * essere vuota poiché c'è almeno l'elemento da invalidare.
-     */
-
-    if(head_sorted_list == NULL)
-    {
-        printk("%s: [ERRORE INVALIDATE DATA - REMOVE] Errore inconsistenza: il blocco %lld era presente all'interno della lista nella HT ma non nella lista ordinata\n", MOD_NAME, index);
-
-        res_inval->code = 1;
-
-        res_inval->block = NULL;
-
-        return res_inval;
-    }
-
-    if( head_sorted_list->block_index == index )
-    {
-        res_inval->code = 0;
-
-        res_inval->block = head_sorted_list;
-
-        head_sorted_list = head_sorted_list->sorted_list_next;
-
-        asm volatile ("mfence");
-
-#ifdef NOT_CRITICAL_INVAL
-        printk("%s: [INVALIDATE DATA - REMOVE] Il blocco %lld richiesto per l'invalidazione è stato eliminato con successo dalla lista ordinata\n", MOD_NAME, index);
-#endif
-
-        return res_inval;
-    }
-
-    /* Ricerco il blocco richiesto da invalidare nella lista ordinata */
-
-    prev = head_sorted_list;
-
-    curr = prev->sorted_list_next;
-
-    while(curr!=NULL)
-    {
-        if(curr->block_index == index)
-        {
-
-#ifdef NOT_CRITICAL_INVAL
-            printk("%s: [INVALIDATE DATA - REMOVE] Il blocco %lld da invalidare è stato trovato con successo nella lista ordinata\n", MOD_NAME, index);
-#endif
-
-            next = curr->sorted_list_next;
-
-            break;
-        }
-
-        prev = curr;
-
-        curr = curr->sorted_list_next;
-    }
-
-    if(curr == NULL)
-    {
-        printk("%s: [ERRORE INVALIDATE DATA - REMOVE] Errore inconsistenza: il blocco %lld era presente all'interno della lista nella HT ma non nella lista ordinata\n", MOD_NAME, index);
-
-        res_inval->code = 1;
-
-        res_inval->block = NULL;
-
-        return res_inval;
-    }
-
-    res_inval->code = 0;
-
-    res_inval->block = curr;
-
-    prev->sorted_list_next = next;
- 
-    asm volatile ("mfence");  
-
-#ifdef NOT_CRITICAL_INVAL
-    printk("%s: [INVALIDATE DATA - REMOVE] Il blocco %lld richiesto per l'invalidazione è stato eliminato con successo dalla lista ordinata\n", MOD_NAME, index);
-#endif
-    
-    return res_inval;
-}
-
-
-
-/*
- * Questa funzione esegue l'invalidazione del blocco il cui
- * indice è passato come parametro.
- */
-int invalidate_block(uint64_t index)
-{
-
-    int n ;
-    int index_ht;
-    int index_sorted;
-    uint64_t num_insert;
-    uint64_t free_index_block;
-    unsigned long updated_epoch_ht;
-    unsigned long updated_epoch_sorted;
-    unsigned long last_epoch_ht;
-    unsigned long last_epoch_sorted;
-    unsigned long grace_period_threads_ht;
-    unsigned long grace_period_threads_sorted;
-    struct result_inval *res_inval;
+    int ret;
     struct block_free *bf;
 
-
-    n = 0;
-
-    /*
-     * Prima di effettuare l'invalidazione, è necessario verificare
-     * se sono in esecuzione degli inserimenti. Nel caso in cui
-     * ci siano degli inserimenti in corso (almeno uno), l'invalidazione
-     * dovrà essere posticipata; altrimenti, si comunica l'inzio della
-     * invalidazione e si procede con la rimozione del blocco. 
-     */
-
-    /* Prendo il mutex per eseguire il processo di invalidazione */
-    mutex_lock(&invalidate_mutex);
-
-retry_invalidate:
-
-    if(n > 20)
-    {
-        printk("%s: [ERRORE INVALIDATE DATA] Il numero massimo di tentativi per l'invalidazione del blocco %lld è stato raggiunto\n", MOD_NAME, index);
-
-        mutex_unlock(&invalidate_mutex);
-
-        return 1;
-    }
-
-    /* Sezione critica tra inserimenti e invalidazioni */
-    mutex_lock(&inval_insert_mutex);
-
-    /* Recupero il numero di inserimenti in corso */
-    num_insert = sync_var & MASK_NUMINSERT;
-
-#ifdef NOT_CRITICAL_INVAL
-    printk("%s: [INVALIDATE DATA] Il numero di inserimenti attualmente in corso è pari a %lld\n", MOD_NAME, num_insert);
-#endif
-
-    if(num_insert > 0)
-    {
-        mutex_unlock(&inval_insert_mutex);
-
-#ifdef NOT_CRITICAL_BUT_INVAL
-        printk("%s: [ERRORE INVALIDATE DATA] L'invalidazione del blocco %lld non è stata effettuata al tentativo #%d\n", MOD_NAME, index, n);
-
-        printk("%s: [ERRORE INVALIDATE DATA] Il thread per l'invalidazione del blocco %lld viene messo in attesa\n", MOD_NAME, index);
-#endif
-
-        wait_event_interruptible_timeout(the_queue, (sync_var & MASK_NUMINSERT) == 0, msecs_to_jiffies(100));
-
-        n++;
-
-#ifdef NOT_CRITICAL_INVAL
-        printk("%s: [ERRORE INVALIDATE DATA] Nuovo tentativo #%d di invalidazione del blocco %lld\n", MOD_NAME, n, index);
-#endif
-
-        goto retry_invalidate;
-    }
-
-    if(sync_var)
-    {
-        mutex_unlock(&inval_insert_mutex);
-
-        mutex_unlock(&invalidate_mutex);
-
-        return 1;
-    }
-
-    /* Comunico l'inizio del processo di invalidazione */
-
-    __atomic_exchange_n (&(sync_var), 0X8000000000000000, __ATOMIC_SEQ_CST);
-
-
-    mutex_unlock(&inval_insert_mutex);
-
-    /*
-     * Durante il processo di invalidazione non è possibile
-     * avere in concorrenza l'inserimento di un nuovo blocco.
-     */
-    res_inval = remove_block(index);
-
-    if( res_inval == NULL )
-    {
-        __atomic_exchange_n (&(sync_var), 0X0000000000000000, __ATOMIC_SEQ_CST);
-
-        mutex_unlock(&invalidate_mutex);
-
-        wake_up_interruptible(&the_queue);
-
-        return 1;
-    }
-
-    if(res_inval->code == 2)
-    {
-        __atomic_exchange_n (&(sync_var), 0X0000000000000000, __ATOMIC_SEQ_CST);
-
-        mutex_unlock(&invalidate_mutex);
-
-        wake_up_interruptible(&the_queue);
-
-        return 0;
-    }
-
-    updated_epoch_ht = (gp->next_epoch_index_ht) ? MASK : 0;
-    updated_epoch_sorted = (gp->next_epoch_index_sorted) ? MASK : 0;
-
-    gp->next_epoch_index_ht += 1;
-    gp->next_epoch_index_ht %= 2;
-    gp->next_epoch_index_sorted += 1;
-    gp->next_epoch_index_sorted %= 2;
-
-    last_epoch_ht = __atomic_exchange_n (&(gp->epoch_ht), updated_epoch_ht, __ATOMIC_SEQ_CST);
-    last_epoch_sorted = __atomic_exchange_n (&(gp->epoch_sorted), updated_epoch_sorted, __ATOMIC_SEQ_CST);
-
-    index_ht = (last_epoch_ht & MASK) ? 1:0;
-    index_sorted = (last_epoch_sorted & MASK) ? 1:0;
-
-    grace_period_threads_ht = last_epoch_ht & (~MASK);
-    grace_period_threads_sorted = last_epoch_sorted & (~MASK);
-
-#ifdef NOT_CRITICAL_INVAL
-    printk("%s: [INVALIDATE DATA] Attesa della terminazione del grace period HT: #threads %ld\n", MOD_NAME, grace_period_threads_ht);
-    printk("%s: [INVALIDATE DATA] Attesa della terminazione del grace period lista ordinata: #threads %ld\n", MOD_NAME, grace_period_threads_sorted);
-#endif
-
-sleep_again:
-
-    wait_event_interruptible_timeout(the_queue, (gp->standing_ht[index_ht] >= grace_period_threads_ht) && (gp->standing_sorted[index_sorted] >= grace_period_threads_sorted), msecs_to_jiffies(100));    
-
-#ifdef NOT_CRITICAL_INVAL
-    printk("%s: gp->standing_ht[index_ht] = %ld\tgrace_period_threads_ht = %ld\tgp->standing_sorted[index_sorted] = %ld\tgrace_period_threads_sorted = %ld\n", MOD_NAME, gp->standing_ht[index_ht], grace_period_threads_ht, gp->standing_sorted[index_sorted], grace_period_threads_sorted);
-#endif
-
-    if((gp->standing_ht[index_ht] < grace_period_threads_ht) || (gp->standing_sorted[index_sorted] < grace_period_threads_sorted))
-    {
-        printk("%s: [ERRORE INVALIDATE DATA] Il thread invalidate va nuovamente a dormire per l'invalidazione del blocco %lld\n", MOD_NAME, index);
-        goto sleep_again;
-    }
-
-    gp->standing_sorted[index_sorted] = 0;
-
-    gp->standing_ht[index_ht] = 0;
-
-    if(res_inval->block != NULL)
-    {
-        free_index_block = res_inval->block->block_index;
-
-        kfree(res_inval->block);
-
-#ifdef NOT_CRITICAL_INVAL
-        printk("%s: [INVALIDATE DATA] Deallocazione del blocco %lld eliminato con successo\n", MOD_NAME, index);
-#endif
-
-    }
-
-retry_kmalloc_invalidate_block:
-
-    /* Inserisco l'indice del blocco nella lista dei blocchi liberi */
-    bf = (struct block_free *)kmalloc(sizeof(struct block_free), GFP_KERNEL);
-
-    if(bf == NULL)
-    {
-        printk("%s: [ERRORE INVALIDATE DATA] Errore esecuzione kmalloc() a seguito della rimozione\n", MOD_NAME);
-
-        goto retry_kmalloc_invalidate_block;
-    }
-
-    
-    bf->block_index = free_index_block;
-
-    bf->next = NULL;
-
-    insert_free_list_conc(bf);
-
-    set_bitmask(index,0);
-
-    __atomic_exchange_n (&(sync_var), 0X0000000000000000, __ATOMIC_SEQ_CST);
-
-    /* Rilascio il mutex per permettere successive invalidazioni */
-    mutex_unlock(&invalidate_mutex);
-
-    wake_up_interruptible(&the_queue);
-
-    return 0;
-}
-
-
-
-/*
- * Questa funzione ha il compito di inizializzare la struttura
- * dati della bitmask per mantenere le informazioni sulla validità
- * dei blocchi del dispositivo.
- */
-int init_bitmask(void)
-{
-    struct buffer_head *bh;
-    struct soafs_sb_info *sbi;
-    uint64_t num_block_state;
-    uint64_t index;
-    uint64_t roll_index;
-    uint64_t * block_state;
-    int sub_index;
-
-    /* 
-     * Recupero le informazioni specifiche 
-     * necessarie per identificare dove nel
-     * device sono presenti i blocchi di stato
-     */
-
-    sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
-
-    num_block_state = sbi->num_block_state;
-
-    if(num_block_state <= 0)
-    {
-        printk("%s: [ERRORE INIZIALIZZAZIONE CORE - BITMASK] Numero dei blocchi di stato non è valido.\n", MOD_NAME);
-
-        return 1;
-    }
-
-    printk("%s: [INIZIALIZZAZIONE CORE - BITMASK] Inizio inizializzazione bitmask...Il numero delle entry è pari a %lld\n", MOD_NAME, num_block_state);
-
-    bitmask = (uint64_t **)kzalloc(num_block_state * sizeof(uint64_t *), GFP_KERNEL);
-
-    if(bitmask == NULL)
-    {
-        printk("%s: [ERRORE INIZIALIZZAZIONE CORE - BITMASK] Errore esecuzione kzalloc() durante l'allocazione della bitmask.", MOD_NAME);
-
-        return 1;
-    }
-
-
-    /* [SB][Inode][SB1]...[SBn][DB]...[DB] */
-    for(index=0;index<num_block_state;index++)
-    {
-        /* Recupero i bit di stato dal device */
-        bh = sb_bread(sb_global, index + 2);
-
-        if(bh == NULL)
-        {
-            printk("%s: [ERRORE INIZIALIZZAZIONE CORE - BITMASK] Errore nella lettura del blocco di stato con indice %lld.\n", MOD_NAME, index);
-
-            for(roll_index=0; roll_index<index; roll_index++)
-            {
-                kfree(bitmask[roll_index]);    
-            }
-
-            kfree(bitmask);
-
-            bitmask = NULL;
-
-            printk("%s: [ERRORE INIZIALIZZAZIONE CORE - BITMASK] Deallocazioni eseguite con successo.\n", MOD_NAME);
-
-	        return 1;
-        }
-
-        /* 512 * 8 = 4096 BYTE */
-        bitmask[index] = (uint64_t *)kzalloc(sizeof(uint64_t) * 512, GFP_KERNEL);
-
-        if(bitmask[index] == NULL)
-        {
-            printk("%s: [ERRORE INIZIALIZZAZIONE CORE - BITMASK] Errore esecuzione kzalloc per la entry della bitmask %lld.\n", MOD_NAME, index);
-
-            for(roll_index=0; roll_index<index; roll_index++)
-            {
-                kfree(bitmask[roll_index]);    
-            }
-
-            kfree(bitmask);
-
-            bitmask = NULL;
-
-            printk("%s: [ERRORE INIZIALIZZAZIONE CORE - BITMASK] Deallocazioni eseguite con successo.\n", MOD_NAME);
-
-	        return 1;
-        }
-
-        block_state = (uint64_t *)bh->b_data;
-
-        for(sub_index=0;sub_index<512;sub_index++)
-        {
-            bitmask[index][sub_index]= block_state[sub_index]; 
-        }
-
-        brelse(bh);
-
-        printk("%s: [INIZIALIZZAZIONE CORE - BITMASK] Inizializzazione blocco bitmask #%lld è stata completata con successo.\n", MOD_NAME, index);
-    }
-
-    printk("%s: [INIZIALIZZAZIONE CORE - BITMASK] Inizializzazione bitmask completata con successo.\n", MOD_NAME);
-
-    return 0;
-    
-}
-
-
-
-/*
- * Questa funzione implementa un semplice controllo sulla
- * consistenza delle informazioni presenti nella lista dei
- * blocchi liberi rispetto alle informazioni mantenute nella
- * bitmask.
- */
-void check_consistenza(void)
-{
-    struct block_free *bf;
-    int bitmask_entry;
-    int array_entry;
-    uint64_t offset;
-    uint64_t base;
-
-    base = 1;
-
+    /* Recupero il riferimento alla testa della lista dei blocchi liberi */
     bf = head_free_block_list;
 
-    while(bf!=NULL)
+    /* Eseguo la scansione della lista dei blocchi liberi */
+    while(bf != NULL)
     {
-        printk("%s: [CHECK CONSISTENZA] valore indice del blocco inserito nella lista dei blocchi liberi è pari a %lld\n", MOD_NAME, bf->block_index);
+        printk("%s: [CHECK CONSISTENZA FREE-LIST] Valore indice del blocco: %lld\n", MOD_NAME, bf->block_index);
     
-        // Determino l'array di uint64_t */
-        bitmask_entry = bf->block_index / (SOAFS_BLOCK_SIZE << 3);
+        ret = check_bit(bf->block_index);
 
-        // Determino la entry dell'array */
-        array_entry = (bf->block_index  % (SOAFS_BLOCK_SIZE << 3)) / (sizeof(uint64_t) * 8);
-
-        offset = bf->block_index % (sizeof(uint64_t) * 8);
-
-        if(bitmask[bitmask_entry][array_entry] & (base << offset))
+        if(ret)
         {
             printk("%s: [ERRORE CHECK CONSISTENZA] Errore inconsistenza per l'indice %lld.\n", MOD_NAME, bf->block_index);
         }
@@ -761,8 +150,8 @@ void check_consistenza(void)
 #ifdef NOT_CRITICAL
             printk("%s: [CHECK CONSISTENZA] Nessun errore di inconsistenza per l'indice %lld.\n", MOD_NAME, bf->block_index);
 #endif
-        }
-        
+        }    
+    
         bf = bf->next;
     }
 }
@@ -825,34 +214,43 @@ retry_freelist_head:
 
 
 /*
- * Questa funzione ha il compito di verificare la validità
- * del blocco il cui indice è passato come parametro.
+ * check_bit - Verifica la validità di un blocco di dati
+ *
+ * @index: Indice del blocco di cui si vuole verificare la validità
+ * 
+ * Restituisce il valore 1 se il blocco di dati è valido, il valore 0 se il
+ * blocco di dati non è valido e il valore 2 se si è verificato un errore.
  */
 int check_bit(uint64_t index)
 {
-    uint64_t base;
-    uint64_t offset;
     int bitmask_entry;
     int array_entry;
     int bits;
+    uint64_t base;
+    uint64_t offset;
+    uint64_t *block_state;
+    struct buffer_head *bh;
 
     bits = sizeof(uint64_t) * 8;
+
     base = 1;
 
-    /* 
-     * Determino il blocco di stato che contiene
-     * l'informazione relativa al blocco che sto
-     * richiedendo (i.e., l'array di uint64_t).
-     */
     bitmask_entry = index / (SOAFS_BLOCK_SIZE << 3);
 
-    /* Determino la entry dell'array */
+    bh = sb_bread(sb_global, 2 + bitmask_entry);
+
+    if(bh == NULL){
+        printk("%s: [ERRORE CHECK BIT] Errore nella lettura del blocco di stato\n", MOD_NAME);
+        return 2;
+    }
+
+    block_state = (uint64_t *)bh->b_data;
+
     array_entry = (index  % (SOAFS_BLOCK_SIZE << 3)) / bits;
 
-    /* Determino l'offset nella entry dell'array */
     offset = index % bits;
 
-    if(bitmask[bitmask_entry][array_entry] & (base << offset))
+    if(block_state[array_entry] & (base << offset))
     {
 
 #ifdef NOT_CRITICAL_INIT
@@ -872,9 +270,16 @@ int check_bit(uint64_t index)
 
 
 /*
- * Questa funzione ha il compito di recuperare gli
- * indici dei blocchi liberi da poter utilizzare
- * per inserire i nuovi messaggi.
+ * get_bitmask_block - Recupera gli indici dei blocchi liberi e li inserisce nella free_block_list
+ *
+ * Per eseguire la ricerca degli indici di nuovi blocchi liberi, si utilizza la struttura dati
+ * della bitmask che è presente all'interno dei blocchi di stato del dispositivo. Per ridurre
+ * il costo della ricerca degli indici, si sfrutta la variabile 'pos' che indica la posizione
+ * all'interno della bitmask a partire dalla quale bisogna iniziare la ricerca dei blocchi
+ * liberi. Infatti, tutti i blocchi il cui indice si trova prima della variabile 'pos' sono
+ * occupati.
+ *
+ * Restituisce il valore 0 se ha completato con successo; altrimenti, restituisce il valore 1.
  */
 int get_bitmask_block(void)
 {
@@ -889,27 +294,21 @@ int get_bitmask_block(void)
     sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
 
     /*
-     * Devo gestire la concorrenza tra i vari scrittori. Può
-     * accadere che più thread nello stesso momento
-     * devono invocare questa funzione. Solamente un
-     * thread alla volta può eseguirla in modo da
-     * caricare nella lista le informazioni solamente
-     * una volta. Dopo che il primo thread ha eseguito
-     * questa funzione, i threads successivi possono
-     * trovarsi la lista non vuota, poiché precedentemente
-     * popolata, oppure la lista nuovamente vuota ma
-     * con tutti i blocchi liberi già utilizzati.
-     * In entrambi i casi, la funzione non deve essere
-     * eseguita poiché o i blocchi sono stati già
-     * recuperati oppure non esiste alcun blocco libero
-     * da utilizzare per inserire il messaggio.
+     * Devo gestire la concorrenza tra i vari scrittori. Può accadere che più thread nello
+     * stesso momento devono invocare questa funzione. Solamente un thread alla volta può
+     * eseguirla in modo da caricare nella lista le informazioni. Dopo che il primo thread
+     * ha eseguito questa funzione, i threads successivi possono trovare la lista non vuota,
+     * poiché precedentemente popolata, oppure la lista nuovamente vuota ma con tutti i blocchi
+     * liberi già utilizzati. In entrambi i casi, la funzione non deve essere eseguita poiché
+     * o i blocchi sono stati già recuperati oppure non esiste alcun blocco libero da utilizzare
+     * per inserire il messaggio.
      */
 
     if( (head_free_block_list != NULL) || (num_block_free_used == sbi->num_block_free))
     {
 
 #ifdef NOT_CRITICAL_BUT_PUT
-        printk("%s: [PUT DATA - RECUPERO BLOCCHI] I blocchi sono stati già determinati o invalidati\n", MOD_NAME);
+        printk("%s: [PUT DATA - RECUPERO BLOCCHI] I blocchi liberi sono stati già determinati o quelli occupati invalidati\n", MOD_NAME);
 #endif
 
         return 0;
@@ -919,20 +318,15 @@ int get_bitmask_block(void)
     num_block_data = sbi->num_block - 2 - sbi->num_block_state;
 
     /* 
-     * Questa variabile rappresenta il numero massimo di
-     * blocchi che è possibile inserire all'interno della
-     * lista. In questo modo, riesco a gestire meglio la
-     * quantità di memoria utilizzata. 
+     * Questa variabile rappresenta il numero massimo di blocchi che è possibile inserire
+     * all'interno della lista. In questo modo, riesco a gestire meglio la quantità di
+     * memoria che viene utilizzata. 
      */
     count = sbi->update_list_size;
 
-
-    /*
-     * Itero sui bit di stato alla ricerca dei
-     * blocchi liberi da inserire nella lista.
-     */
     for(index = pos; index<num_block_data; index++)
     {
+
 #ifdef NOT_CRITICAL_PUT
         printk("%s: [PUT DATA - RECUPERO BLOCCHI] Verifica della validità del blocco con indice %lld\n", MOD_NAME, index);
 #endif
@@ -952,9 +346,10 @@ int get_bitmask_block(void)
             }
 
             bf -> block_index = index;
-retry:
 
-            /* Implemento un inserimento in testa alla lista */
+retry_get_bitmask_block:
+
+            /* Implemento un inserimento in testa alla lista free_block_list */
             old_head = head_free_block_list;
         
             bf->next = head_free_block_list;
@@ -968,13 +363,13 @@ retry:
                     printk("%s: [ERRORE PUT DATA - RECUPERO BLOCCHI] Errore inserimento del blocco in concorrenza\n", MOD_NAME);
 #endif
 
-                    goto retry;
+                    goto retry_get_bitmask_block;
             }
 
             pos = index + 1;
 
 #ifdef NOT_CRITICAL_PUT
-            printk("%s: [PUT DATA - RECUPERO BLOCCHI] Il nuovo valore di pos è pari a %lld\n", MOD_NAME, pos);
+            printk("%s: [PUT DATA - RECUPERO BLOCCHI] pos = %lld\n", MOD_NAME, pos);
 #endif
 
             num_block_free_used++;
@@ -984,11 +379,11 @@ retry:
             count --;
 
             /*
-             * Verifico se ho esaurito il numero di blocchi liberi oppure
-             * se ho già caricato il numero massimo di blocchi all'interno
-             * della lista. In entrambi i casi, interrompo la ricerca
-             * in modo da risparmiare le risorse.
+             * Verifico se ho esaurito il numero di blocchi liberi sul dispositivo oppure se ho
+             * già caricato il numero massimo di blocchi consentito all'interno della lista.
+             * In entrambi i casi, interrompo la ricerca in modo da risparmiare le risorse.
              */
+
             if( (num_block_free_used == sbi->num_block_free)  || (count == 0) )
             {
 
@@ -1016,40 +411,43 @@ retry:
 
 
 /*
- * Inserisce un nuovo elemento all'interno della lista free_block_list.
- * L'inserimento viene fatto in testa poiché non mi importa mantenere
- * alcun ordine tra i blocchi liberi. Questa funzione non viene eseguita
- * in concorrenza.
+ * insert_free_list - Inserisce un nuovo elemento all'interno della lista free_block_list
+ *
+ * @index: Indice del blocco libero da inserire nella lista
+ *
+ * L'inserimento nella lista viene fatto in testa poiché non mi importa mantenere
+ * alcun ordine tra i blocchi liberi del dispositivo.
+ *
+ * Restituisce il valore 0 in caso di successo; altrimenti, restituisce il valore 1.
  */
 int insert_free_list(uint64_t index)
 {
     struct block_free *new_item;
     struct block_free *old_head;
 
+    /* Alloco il nuovo elemento da inserire nella lista */
     new_item = (struct block_free *)kmalloc(sizeof(struct block_free), GFP_KERNEL);
 
-    if(new_item==NULL)
+    if(new_item == NULL)
     {
-        printk("%s: [ERRORE INIZIALIZZAZIONE CORE - FREE LIST] Errore malloc() free list.", MOD_NAME);
+        printk("%s: [ERRORE INIZIALIZZAZIONE CORE - FREE LIST] Errore esecuzione kmalloc() per il blocco %lld\n", MOD_NAME, index);
         return 1;
     }
 
+    /* Popolo la struttura dati che rappresenta il nuovo elemento della lista */
     new_item->block_index = index;
 
-    if(head_free_block_list == NULL)
-    {
-        head_free_block_list = new_item;
-        head_free_block_list -> next = NULL;
-    }
-    else
-    {
-        old_head = head_free_block_list;
-        head_free_block_list = new_item;
-        head_free_block_list -> next = old_head;
-    }
+    /* Recupero il riferimento alla testa della lista corrente */
+    old_head = head_free_block_list;
+
+    /* Aggiorno la testa della lista */
+    head_free_block_list = new_item;
+
+    /* Collego la nuova testa della lista con quella precedente */
+    head_free_block_list -> next = old_head;
 
 #ifdef NOT_CRITICAL_INIT
-    printk("%s: [INIZIALIZZAZIONE CORE - FREE LIST] Inserito il blocco %lld nella lista dei blocchi liberi.\n", MOD_NAME, index);
+    printk("%s: [INIZIALIZZAZIONE CORE - FREE LIST] Il blocco %lld è stato inserito nella lista dei blocchi liberi\n", MOD_NAME, index);
 #endif
 
     return 0;
@@ -1058,11 +456,29 @@ int insert_free_list(uint64_t index)
 
 
 /*
- * index_free: array con indici dei blocchi liberi
- * actual_size: dimensione effettiva dell'array
+ * init_free_block_list - Inizializzazione della free_block_list
+ * 
+ * @index_free: L'array contenente gli indici dei blocchi liberi che si vogliono
+ *              caricare nella lista
  *
- * Questa funzione ha il compito di inizializzare la lista contenente
- * gli indici dei blocchi liberi.
+ * @actual_size: La dimensione effettiva dell'array 'index_free'
+ *
+ * Questa funzione ha il compito di inizializzare la lista contenente gli indici
+ * dei blocchi liberi. Viene utilizzato direttamente l'array 'index_free' in modo
+ * da evitare ulteriori accessi al dispositivo. Il caricamento di un insieme
+ * iniziale di indici dei blocchi liberi viene fatto in modo da rendere più rapida
+ * l'identificazione di un nuovo blocco libero da utilizzare per la scrittura.
+ * La variabile 'num_block_free_used' rappresenta il numero di blocchi liberi
+ * all'istante di montaggio che sono stati caricati all'interno della lista. A
+ * seguito dell'inizializzazione, essa viene settata alla dimensione dell'array
+ * utilizzato per l'inizializzazione poiché sono stati caricati esattamente quegli
+ * indici.
+ * La variabile 'pos' rappresenta la posizione all'interno della bitmask a partire
+ * dalla quale verranno cercati i blocchi liberi nel dispositivo. Questa variabile
+ * consente di ridurre il costo della ricerca di un nuovo blocco libero poiché evita
+ * la scansione di una porzione iniziale della bitmask che risulta essere già occupata.
+ *
+ * Restituisce il valore 0 in caso di successo; altrimenti, restituisce il valore 1.
  */
 int init_free_block_list(uint64_t *index_free, uint64_t actual_size)
 {
@@ -1071,36 +487,53 @@ int init_free_block_list(uint64_t *index_free, uint64_t actual_size)
     int ret;
     struct block_free *roll_bf;
 
+    /* Il valore SIZE_INIT rappresenta la dimensione massima dell'array index_free.
+     * Di conseguenza, la dimensione corrente 'actual_size' dell'array index_free 
+     * non può essere maggiore della dimensione massima consentita SIZE_INIT.
+     */
+
     if(SIZE_INIT < actual_size)
     {
-        printk("%s: [ERRORE INIZIALIZZAZIONE CORE - FREE LIST]  Errore nella dimensione dell'array.\nACTUAL_SIZE = %lld\tSIZE_INIT = %d\n", MOD_NAME, actual_size, SIZE_INIT);
-
+        printk("%s: [ERRORE INIZIALIZZAZIONE CORE - FREE LIST] ACTUAL_SIZE = %lld\tSIZE_INIT = %d\n", MOD_NAME, actual_size, SIZE_INIT);
         return 1;
     }
 
+    /* Eseguo la scansione dell'array per recuperare gli indici dei blocchi */
     for(index=0; index<actual_size;index++)
     {
 
 #ifdef NOT_CRITICAL_INIT
-        printk("%s: [INIZIALIZZAZIONE CORE - FREE LIST] Inserimento del blocco %lld all'interno della lista in corso...\n", MOD_NAME, index_free[index]);
+        printk("%s: [INIZIALIZZAZIONE CORE - FREE LIST] Inserimento del blocco %lld all'interno della lista...\n", MOD_NAME, index_free[index]);
 #endif
 
         ret = insert_free_list(index_free[index]);
 
         if(ret)
         {
-            printk("%s: [ERRORE INIZIALIZZAZIONE CORE - FREE LIST] Errore kzalloc() free_list indice %lld.\n", MOD_NAME, index);
+            printk("%s: [ERRORE INIZIALIZZAZIONE CORE - FREE LIST] Errore inserimento del blocco con indice %lld\n", MOD_NAME, index);
+
+            /*
+             * Eseguo la procedura di rollback per deallocare gli elementi
+             * che sono stati allocati fino alla iterazione corrente. La
+             * variabile 'index' mi dice fino a che punto sono arrivato
+             * nelle iterazioni.
+             */
 
             for(roll_index=0; roll_index<index;roll_index++)
             {
                 roll_bf = head_free_block_list->next;
-
                 kfree(head_free_block_list);
-
                 head_free_block_list = roll_bf;
             }
 
-            printk("%s: [ERRORE INIZIALIZZAZIONE CORE - FREE LIST] Rollback eseguito con successo...\n", MOD_NAME);
+            if(head_free_block_list != NULL)
+            {
+                printk("%s: [ERRORE INIZIALIZZAZIONE CORE - FREE LIST] Errore rollback nella deallocazione della lista dei blocchi liberi\n", MOD_NAME);
+            }
+            else
+            {
+                printk("%s: [ERRORE INIZIALIZZAZIONE CORE - FREE LIST] Rollback eseguito con successo...\n", MOD_NAME);
+            }
 
             return 1;
         }
@@ -1115,9 +548,9 @@ int init_free_block_list(uint64_t *index_free, uint64_t actual_size)
 
     pos = index_free[actual_size - 1] + 1;
 
-    printk("%s: [INIZIALIZZAZIONE CORE - FREE LIST] Il numero di blocchi liberi utilizzati è pari a %lld.\n", MOD_NAME, num_block_free_used);
+    printk("%s: [INIZIALIZZAZIONE CORE - FREE LIST] num_block_free_used = %lld\n", MOD_NAME, num_block_free_used);
 
-    printk("%s: [INIZIALIZZAZIONE CORE - FREE LIST] Il valore di pos è pari a %lld.\n", MOD_NAME, pos);
+    printk("%s: [INIZIALIZZAZIONE CORE - FREE LIST] pos = %lld\n", MOD_NAME, pos);
 
     check_consistenza();
 
@@ -1127,27 +560,40 @@ int init_free_block_list(uint64_t *index_free, uint64_t actual_size)
 
 
 /*
- * Questa funzione mi consente di modificare le informazioni
- * di validità dei blocchi all'interno della bitmask.
+ * set_bitmask - Modifica le informazioni di validità dei blocchi all'interno della bitmask
+ *
+ * @index: Indice del blocco di cui si vuole cambiare la stato di validità
+ * @mode: il valore 0 consente di settare il blocco come non valido mentre il valore 1
+ *        setta il blocco come valido.
+ *
+ * Restituisce il valore 0 in caso di successo; altrimenti, restituisce il valore 1.
  */
-void set_bitmask(uint64_t index, int mode)
+int set_bitmask(uint64_t index, int mode)
 {
+    int bits;
+    int array_entry;
+    int bitmask_entry;
     uint64_t base;
     uint64_t shift_base;
     uint64_t offset;
-    int bitmask_entry;
-    int array_entry;
-    int bits;
+    uint64_t *block_state;
+    struct buffer_head *bh;
 
-    bits = sizeof(uint64_t) * 8;
-    
 
-    /* 
-     * Determino il blocco di stato che contiene
-     * l'informazione relativa al blocco che sto
-     * richiedendo (i.e., l'array di uint64_t).
-     */
+    bits = sizeof(uint64_t) * 8;    
+
+    /* Determino il blocco di stato che contiene l'informazione relativa al blocco richiesto */
     bitmask_entry = index / (SOAFS_BLOCK_SIZE << 3);
+
+    bh = sb_bread(sb_global, 2 + bitmask_entry);
+    
+    if(bh == NULL)
+    {
+        printk("%s: [ERRORE SET BITMASK] Errore nella lettura del blocco di stato dal dispositivo\n", MOD_NAME);
+        return 1;
+    }
+
+    block_state = (uint64_t *)bh->b_data;    
 
     /* Determino la entry dell'array */
     array_entry = (index  % (SOAFS_BLOCK_SIZE << 3)) / bits;
@@ -1161,52 +607,366 @@ void set_bitmask(uint64_t index, int mode)
 
     if(mode)
     {
-        __sync_fetch_and_or(&(bitmask[bitmask_entry][array_entry]), shift_base);
+        __sync_fetch_and_or(&(block_state[array_entry]), shift_base);
     }
     else
     {
-        __sync_fetch_and_xor(&(bitmask[bitmask_entry][array_entry]), shift_base);
-    }   
+        __sync_fetch_and_xor(&(block_state[array_entry]), shift_base);
+    }
+
+    return 0;  
 
 }
 
 
+
 /*
- * Questa funzione è simile alla funzione 'insert_sorted_list'
- * che si trova successivamente. La differenza con l'altra funzione
- * sta nel fatto che questa gestisce la concorrenza.
- * In questo scenario, l'inserimento dei blocchi all'interno
- * della lista viene fatto in coda.
+ * remove_block - Rimozione del blocco target dalla Sorted List
+ *
+ * @index: Indice del blocco che deve essere rimosso dalla lista
+ *
+ * Il blocco target viene cercato all'interno della lista per poterlo eliminare.
+ *
+ * La funzione restituisce il puntatore all'elemento che viene rimosso dalla lista
  */
-int insert_sorted_list_conc(struct block *block)
+static struct block *remove_block(uint64_t index)
 {
     struct block *next;
     struct block *curr;
-    int ret;
-    int n;
+    struct block *prev;
+    struct block *invalid_block;
 
+    /* Verifico se la Sorted List è vuota */
+    if(head_sorted_list == NULL)
+    {
+        printk("%s: [ERRORE INVALIDATE DATA - REMOVE] La lista risulta essere vuota durante il processo di invalidazione\n", MOD_NAME);
+        return NULL;
+    }
+
+    /* Verifico se l'elemento da invalidare è la testa della lista */
+    if( head_sorted_list->block_index == index )
+    {
+        /* Prendo il riferimento al blocco che dovrà essere deallocato */
+        invalid_block = head_sorted_list;
+
+        /* Eseguo una rimozione in testa dell'elemento target */
+        head_sorted_list = head_sorted_list->sorted_list_next;
+
+        asm volatile ("mfence");
+
+#ifdef NOT_CRITICAL_INVAL
+        printk("%s: [INVALIDATE DATA - REMOVE] Il blocco %lld richiesto per l'invalidazione è stato eliminato con successo dalla lista ordinata\n", MOD_NAME, index);
+#endif
+
+        return invalid_block;
+    }
+
+    /* Ricerco il blocco target da invalidare nella Sorted List */
+
+    prev = head_sorted_list;
+
+    curr = prev->sorted_list_next;
+
+    while(curr!=NULL)
+    {
+        if(curr->block_index == index)
+        {
+
+#ifdef NOT_CRITICAL_INVAL
+            printk("%s: [INVALIDATE DATA - REMOVE] Il blocco %lld da invalidare è stato trovato con successo nella lista ordinata\n", MOD_NAME, index);
+#endif
+
+            next = curr->sorted_list_next;
+            break;
+        }
+
+        prev = curr;
+        curr = curr->sorted_list_next;
+    }
+
+    if(curr == NULL)
+    {
+        printk("%s: [ERRORE INVALIDATE DATA - REMOVE] Il blocco %lld non è presente nella Sorted List\n", MOD_NAME, index);
+        return NULL;
+    }
+
+    /* Il successore del predecessore è il successore dell'elemento da eliminare */
+    prev->sorted_list_next = next;
+ 
+    asm volatile ("mfence");
+
+    return curr;
+}
+
+/*
+ * invalidate_block - Invalida un blocco contenente un messaggio utente valido
+ *
+ * @index: Indice del blocco che deve essere invalidato
+ *
+ * Durante una invalidazione non è possibile che la stato della Sorted List venga modificato.
+ * Infatti, durante una invalidazione non è possibile avere un'ulteriore invalidazione oppure
+ * l'inserimento di un nuovo blocco. Una volta avvisati gli altri thread sull'invalidazione
+ * che deve essere eseguita, il thread ricerca il blocco target all'interno della Sorted List
+ * per rimuoverlo.
+ *
+ * La funzione restituisce il valore 0 in caso di successo; altrimenti, ritorna il valore 1.
+ */
+int invalidate_block(uint64_t index)
+{
+    int n;
+    int index_sorted;
+    uint64_t num_insert;
+    unsigned long last_epoch_sorted;
+    unsigned long updated_epoch_sorted;
+    unsigned long grace_period_threads_sorted;
+    struct block_free *bf;
+    struct block *invalid_block;
+
+    /*
+     * Prima di effettuare l'invalidazione, è necessario verificare se sono in
+     * esecuzione degli inserimenti. Nel caso in cui  ci siano degli inserimenti
+     * in corso (almeno uno), l'invalidazione dovrà essere posticipata; altrimenti,
+     * si comunica l'inzio della invalidazione e si procede con la rimozione del blocco. 
+     */
+    
     n = 0;
 
-    block->sorted_list_next = NULL;
+    /* 
+     * Prendo il mutex per eseguire il processo di invalidazione. Non è possibile
+     * avere 2+ invalidazioni contemporaneamente. Le invalidazioni sono eseguite in
+     * sequenza, una dopo l'altra.
+     */
+    mutex_lock(&invalidate_mutex);
+
+retry_invalidate:
+
+    /* Verifico se sono terminati i tentativi disponibili per l'invalidazione */
+    if(n > 20)
+    {
+        printk("%s: [ERRORE INVALIDATE DATA] Il numero massimo di tentativi per l'invalidazione del blocco %lld è stato raggiunto\n", MOD_NAME, index);
+        mutex_unlock(&invalidate_mutex);
+        return 1;
+    }
+
+    /* Sezione critica tra inserimenti e invalidazioni */
+    mutex_lock(&inval_insert_mutex);
+
+    /* Recupero il numero di inserimenti in corso */
+    num_insert = sync_var & MASK_NUMINSERT;
+
+#ifdef NOT_CRITICAL_INVAL
+    printk("%s: [INVALIDATE DATA] Il numero di inserimenti attualmente in corso è pari a %lld\n", MOD_NAME, num_insert);
+#endif
+
+    if(num_insert > 0)
+    {
+        mutex_unlock(&inval_insert_mutex);
+
+#ifdef NOT_CRITICAL_BUT_INVAL
+        printk("%s: [ERRORE INVALIDATE DATA] L'invalidazione del blocco %lld non è stata effettuata al tentativo #%d\n", MOD_NAME, index, n);
+#endif
+
+        wait_event_interruptible_timeout(the_queue, (sync_var & MASK_NUMINSERT) == 0, msecs_to_jiffies(100));
+
+        n++;
+
+#ifdef NOT_CRITICAL_INVAL
+        printk("%s: [ERRORE INVALIDATE DATA] Tentativo #%d per l'invalidazione del blocco %lld\n", MOD_NAME, n, index);
+#endif
+
+        goto retry_invalidate;
+    }
+
+    if(sync_var)
+    {
+        printk("%s: [ANOMALIA INVALIDATE DATA] Verificare il valore di sync_var\n", MOD_NAME);
+        mutex_unlock(&inval_insert_mutex);
+        mutex_unlock(&invalidate_mutex);
+        return 1;
+    }
+
+    /* Comunico l'inizio del processo di invalidazione */
+    __atomic_exchange_n (&(sync_var), 0X8000000000000000, __ATOMIC_SEQ_CST);
+
+    /* Termino la sezione critica */
+    mutex_unlock(&inval_insert_mutex);
+
+    invalid_block = remove_block(index);
+
+    if(invalid_block == NULL)
+    {
+        __atomic_exchange_n (&(sync_var), 0X0000000000000000, __ATOMIC_SEQ_CST);
+        mutex_unlock(&invalidate_mutex);
+        wake_up_interruptible(&the_queue);
+        return 1;
+    }
+
+    updated_epoch_sorted = (gp->next_epoch_index_sorted) ? MASK : 0;
+
+    gp->next_epoch_index_sorted += 1;
+    gp->next_epoch_index_sorted %= 2;
+
+    last_epoch_sorted = __atomic_exchange_n (&(gp->epoch_sorted), updated_epoch_sorted, __ATOMIC_SEQ_CST);
+
+    index_sorted = (last_epoch_sorted & MASK) ? 1:0;
+
+    grace_period_threads_sorted = last_epoch_sorted & (~MASK);
+
+#ifdef NOT_CRITICAL_INVAL
+    printk("%s: [INVALIDATE DATA] Attesa della terminazione del grace period lista ordinata: #threads %ld\n", MOD_NAME, grace_period_threads_sorted);
+#endif
+
+sleep_again:
+
+    wait_event_interruptible_timeout(the_queue, gp->standing_sorted[index_sorted] >= grace_period_threads_sorted, msecs_to_jiffies(100));    
+
+#ifdef NOT_CRITICAL_INVAL
+    printk("%s: gp->standing_ht[index_ht] = %ld\tgrace_period_threads_ht = %ld\tgp->standing_sorted[index_sorted] = %ld\tgrace_period_threads_sorted = %ld\n", MOD_NAME, gp->standing_ht[index_ht], grace_period_threads_ht, gp->standing_sorted[index_sorted], grace_period_threads_sorted);
+#endif
+
+    if(gp->standing_sorted[index_sorted] < grace_period_threads_sorted)
+    {
+        printk("%s: [ERRORE INVALIDATE DATA] Il thread invalidate va nuovamente a dormire per l'invalidazione del blocco %lld\n", MOD_NAME, index);
+        goto sleep_again;
+    }
+
+    gp->standing_sorted[index_sorted] = 0;
+
+    /* Terminato il Grace Period posso dealocare la struttura dati in modo sicuro */
+    kfree(invalid_block);
+
+retry_kmalloc_invalidate_block:
+
+    /*
+     * Una volta che il blocco è stato ivnalidato con successo, posso inserire il suo indice
+     * all'interno della lista dei blocchi liberi. Da questo momento, il blocco può essere
+     * utilizzato per l'inserimento di nuovi messaggi utente.
+     */
+    bf = (struct block_free *)kmalloc(sizeof(struct block_free), GFP_KERNEL);
+
+    if(bf == NULL)
+    {
+        printk("%s: [ERRORE INVALIDATE DATA] Errore esecuzione kmalloc() a seguito della rimozione\n", MOD_NAME);
+
+        goto retry_kmalloc_invalidate_block;
+    }
+    
+    bf->block_index = index;
+
+    bf->next = NULL;
+
+    insert_free_list_conc(bf);
+
+    /*
+     * A seguito della rimozione del blocco dalla Sorted List e dell'inserimento del suo indice
+     * all'interno della lista dei blocchi liberi, setto il relativo bit di validità a 0.
+     */
+
+    set_bitmask(index,0);
+
+    __atomic_exchange_n (&(sync_var), 0X0000000000000000, __ATOMIC_SEQ_CST);
+
+    /* Rilascio il mutex per permettere successive invalidazioni */
+    mutex_unlock(&invalidate_mutex);
+
+    wake_up_interruptible(&the_queue);
+
+    
+    return 0;
+}
+
+
+
+/*
+ * insert_sorted_list_conc - Inserimento di un nuovo elemento nella Sorted List
+ *
+ * @block: Il nuovo elemento da aggiungere all'interno della lista
+ *
+ * A differenza della funzione insert_sorted_list, questa funzione gestisce la concorrenza.
+ * In questo scenario, l'inserimento dei blocchi all'interno della lista viene fatto in coda.
+ * E' necessario gestire esplicitamente la concorrenza con le invalidazioni. Se viene eseguita
+ * l'invalidazione dell'ultimo blocco nella Sorted List in parallelo con l'inserimento, allora
+ * è possibile che si verifichi una rottura della lista.
+ *
+ * La funzione restituisce il valore 0 in caso di successo; altrimenti, restituisce il valore 1.
+ */
+int insert_sorted_list_conc(struct block *block)
+{
+    int n;
+    int ret;
+    struct block *next;
+    struct block *curr;
 
     next = NULL;
 
+    /* Poiché l'elemento viene inserito in coda alla lista, allora il suo succesore sarà NULL */
+    block->sorted_list_next = NULL;   
+
+    /* Gestione della concorrenza con le invalidazioni */
+    n = 0;
+
+retry_mutex_inval_insert:
+
+    if(n > 10)
+    {
+        printk("%s: [ERRORE PUT DATA - SORTED LIST] Il numero massimo di tentativi %d per il blocco %lld è stato raggiunto\n", MOD_NAME, n, block->block_index);
+        return 1;
+    }
+
+    mutex_lock(&inval_insert_mutex);    
+
+    if( sync_var & MASK_INVALIDATE )
+    {
+#ifdef NOT_CRITICAL_BUT_PUT
+        printk("%s: [ERRORE PUT DATA - SORTED LIST] (%d) E' in corso un'invalidazione, attendere...\n", MOD_NAME, n);
+#endif
+        mutex_unlock(&inval_insert_mutex);
+
+        wait_event_interruptible_timeout(the_queue, (sync_var & MASK_INVALIDATE) == 0, msecs_to_jiffies(100));
+
+        n++;
+
+        goto retry_mutex_inval_insert;
+    }
+
+    /* Comunico la presenza del thread che effettuerà l'inserimento di un nuovo blocco */
+    __sync_fetch_and_add(&sync_var,1);
+
+#ifdef NOT_CRITICAL_BUT_PUT
+    printk("%s: [PUT DATA - INSERIMENTO HT + SORTED] Segnalata la presenza per l'inserimento del blocco %lld\n", MOD_NAME, index);
+#endif
+
+    mutex_unlock(&inval_insert_mutex);
+
+    /*
+     * Durante l'inserimento di un nuovo blocco, non è posibile avere in esecuzione alcuna invalidazione.
+     * Tuttavia, è possibile avere in parallelo molteplici inserimenti. Di conseguenza, la dimensione della
+     * Sorted List può solo che aumentare durante gli inserimenti. Come primo passo, verifico se la lista è
+     * attualmente vuota in modo da eseguire un inserimento in testa.
+     */
     if(head_sorted_list == NULL)
     {
         ret = __sync_bool_compare_and_swap(&head_sorted_list, next, block);
 
         if(!ret)
         {
+
 #ifdef NOT_CRITICAL_BUT_PUT
-            printk("%s: [ERRORE PUT DATA - INSERIMENTO HT + SORTED] L'inserimento in coda non è stato eseguito poiché la lista non è più vuota\n", MOD_NAME);
+            printk("%s: [ERRORE PUT DATA - SORTED LIST] L'inserimento in coda non è stato eseguito poiché la lista non è più vuota\n", MOD_NAME);
 #endif
             n++;
             goto no_empty;        
         }
 
 #ifdef NOT_CRITICAL_BUT_PUT
-        printk("%s: [PUT DATA - INSERIMENTO HT + SORTED] Inserimento in coda nella lista ordinata effettuato con successo per il blocco %lld\n", MOD_NAME, block->block_index);
-#endif    
+        printk("%s: [PUT DATA - SORTED LIST] Inserimento in coda nella lista ordinata effettuato con successo per il blocco %lld\n", MOD_NAME, block->block_index);
+#endif
+
+        /* Comunico di aver terminato l'inserimento ad eventuali threads che devono eseguire una invalidazione */
+        __sync_fetch_and_sub(&sync_var,1);
+
+        wake_up_interruptible(&the_queue);
+
         return 0;
     }
 
@@ -1216,17 +976,20 @@ no_empty:
      * Poiché le invalidazioni dei blocchi non possono essere eseguite
      * in concorrenza con gli inserimenti, da questo momento la lista
      * non potrà essere vuota. In questo modo, posso gestire correttamente
-     * il puntatore 'next'.
+     * il puntatore 'sorted_list_next'della testa della lista.
      */
 
     if(n > 10)
     {
-        printk("%s: [ERRORE PUT DATA - INSERIMENTO HT + SORTED] Numero tentativi massimo raggiunto per l'inserimento nella sorted list del blocco %lld\n", MOD_NAME, block->block_index);
+        printk("%s: [ERRORE PUT DATA - SORTED LIST] Numero tentativi massimo raggiunto per l'inserimento nella sorted list del blocco %lld\n", MOD_NAME, block->block_index);
+         __sync_fetch_and_sub(&sync_var,1);
+        wake_up_interruptible(&the_queue);
         return 1;
     }
 
     curr = head_sorted_list;
 
+    /* Navigo la lista alla ricerca dell'ultimo elemento */
     while( curr->sorted_list_next != NULL )
     {
         curr = curr->sorted_list_next;
@@ -1234,17 +997,23 @@ no_empty:
 
     ret = __sync_bool_compare_and_swap(&(curr->sorted_list_next), next, block);
 
+    /* Verifico se nel frattempo la coda della lista è stata modificata */
+
     if(!ret)
     {
 #ifdef NOT_CRITICAL_BUT_PUT
-        printk("%s: [ERRORE PUT DATA - INSERIMENTO HT + SORTED] Tentativo di inserimento #%d del blocco %lld terminato senza successo\n", MOD_NAME, n, block->block_index);
+        printk("%s: [ERRORE PUT DATA - SORTED LIST] Tentativo di inserimento #%d del blocco %lld terminato senza successo\n", MOD_NAME, n, block->block_index);
 #endif
         n++;
         goto no_empty;
     }
 
+    __sync_fetch_and_sub(&sync_var,1);
+
+    wake_up_interruptible(&the_queue);
+
 #ifdef NOT_CRITICAL_BUT_PUT
-    printk("%s: [PUT DATA - INSERIMENTO HT + SORTED] Inserimento in coda nella lista ordinata effettuato con successo per il blocco %lld al tentativo %d\n", MOD_NAME, block->block_index, n);
+    printk("%s: [PUT DATA - SORTED LIST] Inserimento in coda nella lista ordinata effettuato con successo per il blocco %lld al tentativo %d\n", MOD_NAME, block->block_index, n);
 #endif
 
     return 0;    
@@ -1252,30 +1021,32 @@ no_empty:
 
 
 /*
- * Inserisce un nuovo elemento all'interno della
- * lista contenente i blocchi ordinati secondo
- * l'ordine di consegna. L'elemento non deve essere
- * nuovamente allocato ma si collega l'elemento che 
- * è stato precedentemente allocato tramite puntatori.
- * Il campo 'pos' rappresenta la posizione del blocco
- * nella lista ordinata e viene sfruttato per determinare
- * la corretta posizione all'interno della lista.
- * Osservo che l'esecuzione di questa funzione avviene in
- * assenza di concorrenza.
+ * insert_sorted_list - Inserisce un nuovo elemento all'interno della Sorted List
+ *
+ * @block: Il nuovo elemento da inserire all'interno della lista
+ *
+ * I blocchi validi vengono inseriti nella lista secondo l'ordine di consegna. La
+ * struttura 'struct block' mantiene come metadato la posizione del blocco all'interno
+ * della Sorted List. I blocchi devono essere posti all'interno della lista secondo
+ * un ordine strettamente crescente del campo 'pos'.
  */
 void insert_sorted_list(struct block *block)
 {
     struct block *prev;
     struct block *curr;
 
+    /* Verifico se il blocco deve essere inserito in testa alla Sorted List. */
+
     if(head_sorted_list == NULL)
     {
         /* La lista è vuota ed eseguo un inserimento in testa */
-        head_sorted_list = block;
         block->sorted_list_next = NULL;
+        head_sorted_list = block;
     }
     else
     {
+        /* Verifico se il blocco deve essere inserito in testa alla lista */
+
         if( (head_sorted_list->pos) > (block->pos) )
         {
             /* Inserimento in testa */
@@ -1310,396 +1081,54 @@ void insert_sorted_list(struct block *block)
 
 
 
-void check_rollback(uint64_t index, struct ht_valid_entry * ht_entry)
-{
-    struct block *curr;
-
-    curr = ht_entry->head_list;
-
-    while(curr != NULL)
-    {
-        if(curr->block_index == index)
-        {
-            printk("%s: [ERRORE CHECK ROLLBACK] La procedura di rollback non è stata eseguita con successo per il blocco con indice %lld\n", MOD_NAME, index);
-        }
-        curr = curr->hash_table_next;
-    }
-
-    printk("%s: [CHECK ROLLBACK] La procedura di rollback è stata eseguita con successo per il blocco con indice %lld\n", MOD_NAME, index);
-}
-
-
 
 /*
- * Esegue la procedura di rollback relativa all'inserimento di un
- * nuovo blocco. Più precisamente, rimuove il blocco dalla
- * lista corrispondente nella hash table.
+ * init_sorted_list - Inizializzazione della struttura dati Sorted List
+ *
+ * @num_data_block: Numero dei blocchi di dati del dispositivo
+ *
+ * Utilizza la struttura dati della bitmask per determinare se un blocco è valido oppure
+ * libero. In questo modo, evito di eseguire la sb_bread.
+ *
+ * Restituisce il valore 0 ser l'inizializzazione è andata a buon fine oppure 1 in caso
+ * di fallimento.
  */
-static void rollback(uint64_t index, struct ht_valid_entry * ht_entry)
+int init_sorted_list(uint64_t num_data_block)
 {
-
-    int ret;
-    int n;
-    struct block *curr;
-    struct block *prev;
-    
-
-    curr = ht_entry->head_list;
-
-    /*
-     * Poiché durante la fase di rollback non è possibile
-     * avere invalidazioni e gli inserimenti nelle
-     * liste della HT avvengono in testa, allora non dovrebbe
-     * esserci alcun nuovo blocco tra quello che si deve
-     * eliminare e il successivo (se esiste).
-     */
-
-
-
-    /*
-     * Verifico se il blocco corrisponde alla testa della lista.
-     * In questo caso, nessun altro blocco è stato successivamente
-     * inserito.
-     */
-
-    if(curr->block_index == index)
-    {
-        ret = __sync_bool_compare_and_swap(&(ht_entry->head_list), curr, (ht_entry->head_list)->hash_table_next);
-
-        if(!ret)
-        {
-            /* Sono stati inseriti nuovi blocchi in testa alla lista */
-            goto no_head;
-        }
-
-        printk("%s: [PUT DATA - ROLLBACK] Rollback completato con successo: blocco %lld eliminato dalla HT\n", MOD_NAME, index);
-
-        kfree(curr);
-
-        check_rollback(index, ht_entry);
-
-        return ;
-    }
-
-    n = 0;
-
-no_head:
-
-    prev = ht_entry->head_list;
-
-    curr = prev->hash_table_next;
-
-    while(curr != NULL)
-    {
-        if( curr->block_index == index )
-        {
-            break;
-        }
-
-        prev = curr;
-        curr = curr->hash_table_next;
-    }
-
-    if(curr == NULL)
-    {
-        printk("%s: [ERRORE PUT DATA - ROLLBACK] Il blocco %lld da rimuovere non è presente nella lista\n", MOD_NAME, index);
-        return ;
-    }
-
-    ret = __sync_bool_compare_and_swap(&(prev->hash_table_next), curr, curr->hash_table_next);
-
-    if(!ret)
-    {
-        n++;
-
-#ifdef NOT_CRITICAL_BUT_PUT
-        printk("%s: [ERRORE PUT DATA - ROLLBACK] Tentativo #%d fallito nell'esecuzione della procedura di rollback\n", MOD_NAME, n);
-#endif
-
-        goto no_head;
-    }
-
-    printk("%s: [PUT DATA - ROLLBACK] Rollback completato con successo: blocco %lld eliminato dalla HT\n", MOD_NAME, index);
-
-    kfree(curr);
-}
-
-
-
-/*
- * Questa funzione ha il compito di inserire l'indice del blocco libero
- * all'interno della lista poiché l'inserimento del blocco non è avvenuto
- * con successo.
- */
-void rollback_insert_ht_sorted(struct block_free *item)
-{
-
-    insert_free_list_conc(item);
-
-    printk("%s: [ERRORE PUT DATA - INSERIMENTO HT + SORTED] Rollback eseguito con successo\n", MOD_NAME);    
-}
-
-
-
-/*
- * Inserisce un nuovo elemento all'interno della lista
- * nella hash table e all'interno della lista dei blocchi
- * ordinati. Questa funzione viene eseguita in concorrenza.
- */
-int insert_hash_table_valid_and_sorted_list_conc(char *data_block_msg, uint64_t pos, uint64_t index, struct block_free *item)
-{
-    int num_entry_ht;
-    int ret;
-    int n;                                      /* Contatore del numero di tentativi effettuati */
-    struct block *new_item;
-    struct block *old_head;
-    struct ht_valid_entry *ht_entry; 
-
-    /* Identifico la lista corretta nella hash table per effettuare l'inserimento */
-    num_entry_ht = index % x;
-
-    ht_entry = &(hash_table_valid[num_entry_ht]);
-
-    /* Alloco il nuovo elemento da inserire nelle liste */
-    new_item = (struct block *)kmalloc(sizeof(struct block), GFP_KERNEL);
-    
-    if(new_item == NULL)
-    {
-        printk("%s: [ERRORE PUT DATA - INSERIMENTO HT + SORTED] Errore esecuzione della kmalloc()\n", MOD_NAME);
-
-        rollback_insert_ht_sorted(item);
-
-        return 1;
-    }
-
-    /* Inizializzo il nuovo elemento */
-    new_item->block_index = index;
-
-    new_item->pos = pos;
-
-    new_item->msg = data_block_msg;
-
-    /* Gestisco la concorrenza con le invalidazioni */
-
-    n = 0;
-
-retry_mutex_inval_insert:
-
-    if(n > 10)
-    {
-        printk("%s: [ERRORE PUT DATA - INSERIMENTO HT + SORTED] Il numero massimo di tentativi %d per il blocco %lld è stato raggiunto\n", MOD_NAME, n, index);
-
-        kfree(new_item);
-
-        rollback_insert_ht_sorted(item);
-
-        return 1;
-    }
-
-    mutex_lock(&inval_insert_mutex);    
-
-    if( sync_var & MASK_INVALIDATE )
-    {
-#ifdef NOT_CRITICAL_BUT_PUT
-        printk("%s: [ERRORE PUT DATA - INSERIMENTO HT + SORTED] (%d) E' in corso un'invalidazione, attendere...\n", MOD_NAME, n);
-#endif
-        mutex_unlock(&inval_insert_mutex);
-
-        wait_event_interruptible_timeout(the_queue, (sync_var & MASK_INVALIDATE) == 0, msecs_to_jiffies(100));
-
-        n++;
-
-        goto retry_mutex_inval_insert;
-    }
-
-    /* Comunico la presenza del thread che effettuerà l'inserimento di un nuovo blocco */
-    __sync_fetch_and_add(&sync_var,1);
-
-#ifdef NOT_CRITICAL_BUT_PUT
-    printk("%s: [PUT DATA - INSERIMENTO HT + SORTED] Segnalata la presenza per l'inserimento del blocco %lld\n", MOD_NAME, index);
-#endif
-
-    mutex_unlock(&inval_insert_mutex);
-
-    /* Inserimento in testa nella lista della HT */
-
-    n = 0;
-
-retry_insert_ht:
-
-    if(n > 10)
-    {
-        printk("%s: [ERRORE PUT DATA - INSERIMENTO HT + SORTED] (%d) Il numero di tentativi massimo raggiunto per l'inserimento nella HT\n", MOD_NAME, n);
-
-        __sync_fetch_and_sub(&sync_var,1);
-    
-        rollback_insert_ht_sorted(item);
-
-        /*
-         * In questo modo, sveglio i thread che sono in attesa
-         * della conclusione degli inserimenti. Se gli inserimenti
-         * sono effettivamente conclusi, allora possono procedere con
-         * l'invalidazione del blocco richiesto.
-         */
-        wake_up_interruptible(&the_queue);
-
-        kfree(new_item);
-
-        return 1;
-    }
-
-    old_head = ht_entry->head_list;
-
-    new_item->hash_table_next = old_head;
-
-    ret = __sync_bool_compare_and_swap(&(ht_entry->head_list), old_head, new_item);
-
-    if(!ret)
-    {
-#ifdef NOT_CRITICAL_BUT_PUT
-        printk("%s: [ERRORE PUT DATA - INSERIMENTO HT + SORTED] Conflitto inserimento in testa nella lista #%d della HT\n", MOD_NAME, num_entry_ht);
-#endif
-        n++;
-        goto retry_insert_ht;
-    }
-
-#ifdef NOT_CRITICAL_PUT
-    printk("%s: [PUT DATA - INSERIMENTO HT + SORTED] Inserimento blocco %lld nella entry #%d della HT completato con successo.\n", MOD_NAME, index, num_entry_ht);
-#endif
-
-    ret = insert_sorted_list_conc(new_item);            /* Inserimento del blocco nella lista ordinata */
-
-    if(ret)
-    {
-        rollback(new_item->block_index, ht_entry);
-
-        __sync_fetch_and_sub(&sync_var,1);
-
-        rollback_insert_ht_sorted(item);
-
-        wake_up_interruptible(&the_queue);
-
-        return 1;        
-    }
-
-    __sync_fetch_and_sub(&sync_var,1);                  /* Segnalo che l'operazione di inserimento si è conclusa */
-
-    wake_up_interruptible(&the_queue);
-
-#ifdef NOT_CRITICAL
-    printk("%s: [PUT DATA - INSERIMENTO HT + SORTED] Inserimento blocco %lld nella sorted list avvenuto con successo\n", MOD_NAME, index);
-#endif
-
-    return 0;    
-}
-
-
-
-
-/*
- * Inserisce un nuovo elemento all'interno della lista
- * corretta nella HT e nella lista ordinata.
- */
-static int insert_hash_table_valid_and_sorted_list(char *data_block_msg, uint64_t pos, uint64_t index)
-{
-    int num_entry_ht;
-    size_t len;
-    struct block *new_item;
-    struct block *old_head;
-    struct ht_valid_entry *ht_entry; 
-
-    /* Identifico la lista corretta nella hash table per effettuare l'inserimento */
-    num_entry_ht = index % x;
-
-    ht_entry = &(hash_table_valid[num_entry_ht]);
-
-    /* Alloco il nuovo elemento da inserire nella lista */
-    new_item = (struct block *)kmalloc(sizeof(struct block), GFP_KERNEL);
-    
-    if(new_item == NULL)
-    {
-        printk("%s: [ERRORE INIZIALIZZAZIONE CORE - HT + SORTED] Errore malloc() nell'allocazione del nuovo elemento da inserire nella hash table.", MOD_NAME);
-        return 1;
-    }
-
-    /* Inizializzo il nuovo elemento */
-    new_item->block_index = index;
-
-    new_item->pos = pos;
-
-    len = strlen(data_block_msg) + 1;
-
-    new_item->msg = (char *)kmalloc(len, GFP_KERNEL);
-
-    if(new_item->msg == NULL)
-    {
-        printk("%s: [ERRORE INIZIALIZZAZIONE CORE - HT + SORTED] Errore malloc() nell'allocazione della memoria per il messaggio dell'elemento da inserire nella hash table.", MOD_NAME);
-        return 1;
-    }
-
-    strncpy(new_item->msg, data_block_msg, len);
-
-    /* Inserimento in testa */
-    if(ht_entry->head_list == NULL)
-    {
-        /* La lista è vuota */
-        ht_entry->head_list = new_item;
-        ht_entry->head_list->hash_table_next = NULL;
-    }
-    else
-    {
-        old_head = ht_entry->head_list;
-        ht_entry->head_list = new_item;
-        new_item->hash_table_next = old_head;
-    }
-
-#ifdef NOT_CRITICAL_INIT
-    printk("%s: [INIZIALIZZAZIONE CORE - HT + SORTED] Inserimento blocco %lld nella entry #%d completato con successo.\n", MOD_NAME, index, num_entry_ht);
-#endif
-
-    /* Inserimento del blocco nella lista ordinata */
-    insert_sorted_list(new_item);
-
-    return 0;   
-    
-}
-
-
-
-
-int init_ht_valid_and_sorted_list(uint64_t num_data_block)
-{
-    uint64_t index;
     int isValid;
-    int ret;
+    uint64_t index;
+    struct block *new_item;
     struct buffer_head *bh;
     struct soafs_block *data_block;
     struct soafs_sb_info *sbi;
 
     sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
 
-    if(sbi->num_block_free > sbi->num_block)
-    {
-        printk("%s: [ERRORE INIZIALIZZAZIONE CORE - HT + SORTED] Numero di blocchi liberi maggiore del numero dei blocchi totale\n", MOD_NAME);
+    /* 
+     * Verifico se attualmente non esiste alcun blocco valido. In questo caso, la
+     * lista risulta essere composta solamente dall'elemento DUMMY.
+     */    
 
-        return 1;
-    }
-    
     if(sbi->num_block_free == (sbi->num_block - 2 - sbi->num_block_state))
     {
-        printk("%s: [INIZIALIZZAZIONE CORE - HT + SORTED] Non ci sono blocchi attualmente validi\n", MOD_NAME);
-
+        printk("%s: [INIZIALIZZAZIONE CORE - SORTED LIST] Non ci sono blocchi attualmente validi\n", MOD_NAME);
         head_sorted_list = NULL;
-
         return 0;
     }
 
     bh = NULL;
     data_block = NULL;
 
+    /*
+     * Eseguo la scansione dei blocchi che sono attualmenti validi nel dispositivo.
+     * Per evitare di eseguire inutilmente la sb_bread() quando il blocco è libero
+     * utilizzo la struttura dati della bitmask che è presente nei blocchi di stato
+     * del dispositivo.
+     */
+
     for(index=0; index<num_data_block; index++)
     {
-        /* Verifico se il blocco è valido */
+        /* Verifico la validità del blocco su cui sto iterando */
         isValid = check_bit(index);
 
         if(!isValid)
@@ -1707,23 +1136,34 @@ int init_ht_valid_and_sorted_list(uint64_t num_data_block)
             continue;
         }
 
+        /* Leggo il contenuto del blocco per ricavare la sua posizione all'interno della lista */
+
         bh = sb_bread(sb_global, 2 + sbi->num_block_state + index);                   
 
         if(bh == NULL)
         {
-            printk("%s: [ERRORE INIZIALIZZAZIONE CORE - HT + SORTED] Errore esecuzione della sb_bread() per la lettura del blocco di dati con indice %lld...\n", MOD_NAME, index);
-            return 1;
+            printk("%s: [ERRORE INIZIALIZZAZIONE CORE - SORTED LIST] Errore sb_bread() lettura del blocco %lld...\n", MOD_NAME, index);
+            goto rollback_init_sorted;
         }
 
         data_block = (struct soafs_block *)bh->b_data;
 
-        ret = insert_hash_table_valid_and_sorted_list(data_block->msg, data_block->pos, index);
+        /* Alloco il nuovo elemento da inserire nella lista */
 
-        if(ret)
+        new_item = (struct block *)kmalloc(sizeof(struct block), GFP_KERNEL);
+    
+        if(new_item == NULL)
         {
-            printk("%s: [ERRORE INIZIALIZZAZIONE CORE - HT + SORTED] Errore inserimento nella HT del blocco con indice %lld.\n", MOD_NAME, index);
-            return 1;
+            printk("%s: [ERRORE INIZIALIZZAZIONE CORE - SORTED LIST] Errore esecuzione kmalloc()\n", MOD_NAME);
+            goto rollback_init_sorted;
         }
+
+        /* Inizializzo il nuovo elemento da inserire nella lista */
+
+        new_item->block_index = index;
+        new_item->pos = data_block->pos;
+
+        insert_sorted_list(new_item);
 
 #ifdef NOT_CRITICAL_BUT_INIT
         printk("%s: [INIZIALIZZAZIONE CORE - HT + SORTED] Il blocco di dati con indice %lld è valido e nella lista ordinata si trova in posizione %lld.\n", MOD_NAME, index, data_block->pos);
@@ -1733,175 +1173,120 @@ int init_ht_valid_and_sorted_list(uint64_t num_data_block)
     }
 
     return 0;
+
+rollback_init_sorted:
+
+    while(head_sorted_list!=NULL)
+    {
+        new_item = head_sorted_list->sorted_list_next;
+        kfree(head_sorted_list);
+        head_sorted_list = new_item;
+    }
+    
+    return 1;
 }
 
 
 
-int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint64_t actual_size) //
+/*
+ * init_data_structure_core - Inizializzazione delle strutture dati core del modulo
+ *
+ * @num_data_block: Numero dei blocchi di dati del dispositivo
+ * @index_free: array contenente gli indici dei blocchi liberi all'istante di montaggio
+ * @actual_size: Numero degli indici dei blocchi liberi all'istante di montaggio nell'array
+ *
+ * Le strutture dati che vengono inizializzate sono la lista dei blocchi liberi e la lista
+ * contenente gli indici dei blocchi disposti secondo l'ordine di consegna (Sorted List).
+ * I messaggi contenuti all'interno dei blocchi non vengono caricati in memoria ma sono
+ * recuperati su richiesta.
+ *
+ * Restituisce il valore 0 se l'inizializzazione è andata a buon fine oppure 1 in caso
+ * di fallimento.
+ */
+int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint64_t actual_size)
 {
     int ret;
     int i;
     uint64_t index;
-    size_t size_ht;
     struct soafs_sb_info *sbi;
     struct block_free *roll_bf;
 
+    /* E' necessario avere il riferimento al superblocco per poter eseguire le operazioni di inizializzazione */
     if(sb_global == NULL)
     {
-        printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Il contenuto del superblocco non è valido. Impossibile inizializzare le strutture dati core.\n", MOD_NAME);
-
-        is_free = 1;
-
+        printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Il superblocco globale non è valido\n", MOD_NAME);
         return 1;
     }
 
+    /* Il numero dei blocchi di dati del dispositivo deve essere > 0 */
     if(num_data_block <= 0)
     {
-        printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Il numero dei blocchi di dati del device non è valido. Impossibile inizializzare le strutture dati core.\n", MOD_NAME);
-
-        is_free = 1;
-
+        printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Il numero dei blocchi di dati del device non è valido\n", MOD_NAME);
         return 1;
     }
 
-    /* Inizializzo la bitmask */
-    ret = init_bitmask();
-
-    if(ret)
-    {
-        printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Errore inizializzazione bitmask, non è possibile completare l'inizializzazione core.\n", MOD_NAME);
-
-        is_free = 1;
-
-        return 1;
-    }
-
+    /* Recupero le informazioni che sono FS specific */
     sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
 
     printk("%s: [INIZIALIZZAZIONE CORE] Valore di 'actual_size' è pari a %lld\n", MOD_NAME, actual_size);
 
+    /*
+     * Effettuo i seguenti controlli di consistenza:
+     * 1. La dimensione dell'array degli indici liberi 'index_free' non può essere negativa.
+     * 2. Il numero dei blocchi liberi nel dispositivo all'istante di montaggio non può essere negativo.
+     * 3. Non è possibile avere degli indici dei blocchi liberi se il numero dei blocchi liberi è zero.
+     */
     if( (actual_size < 0) || (sbi->num_block_free < 0) || ((actual_size > 0) && (sbi->num_block_free == 0)) )
     {
-        printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Le informazioni sui blocchi liberi non sono valide.\n", MOD_NAME);
-
-        for(index=0;index<sbi->num_block_state;index++)
-        {
-            kfree(bitmask[index]);        
-        }
-
-        kfree(bitmask);
-
-        bitmask = NULL;
-
-        printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Deallocazione bitmask completata con successo...\n", MOD_NAME);
-
-        is_free = 1;
-
+        printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Le informazioni relative ai blocchi liberi non sono valide\n", MOD_NAME);
         return 1;
     }
 
-
-    /* Inizializzo la free_block_list */
+    /*
+     * Se la dimensione effettiva dell'array 'index_free' è strettamente
+     * maggiore di zero allora esistono degli indici di blocchi liberi
+     * che devono essere memorizzati all'interno della lista dei blocchi
+     * liberi. Se la dimensione effettiva dell'array è pari a zero, allora
+     * nessun indice verrà caricato all'interno della struttura dati e la
+     * lista sarà inizialmente vuota.
+     */
     if(actual_size > 0)
     {
-        ret = init_free_block_list(index_free, actual_size);
+        /*
+        * Viene inizializzata la struttura dati free_block_list utilizzando
+        * le informazioni presenti all'interno del superblocco del dispositivo.
+        * Vengono utilizzati l'array contenente gli indici dei blocchi liberi
+        * all'istante di montaggio e la dimensione effettiva dell'array.
+        */
 
+        ret = init_free_block_list(index_free, actual_size);
         if(ret)
         {
-            printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Errore inizializzazione free_block_list, non è possibile completare l'inizializzazione core.\n", MOD_NAME);
-    
-            for(index=0;index<sbi->num_block_state;index++)
-            {
-                kfree(bitmask[index]);        
-            }
-
-            kfree(bitmask);
-
-            bitmask = NULL;
-
-            printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Deallocazione bitmask completata con successo...\n", MOD_NAME);
-
-            is_free = 1;
-
+            printk("%s: [ERRORE INIZIALIZZAZIONE CORE] L'inizializzazione della free_block_list non è terminata con successo\n", MOD_NAME);
             return 1;
         }
 
-    }else
+    }
+    else
     {
+        /* Non ho utilizzato alcun blocco libero all'istante di montaggio */
         num_block_free_used = 0;
 
+        /* Si inizia la ricerca dei blocchi liberi dall'indice zero della bitmask */
         pos = 0;
 
+        /* La lista dei blocchi liberi è vuota */
         head_free_block_list = NULL;
     }
 
-
-    /* Inizializzazione HT e sorted_list */
-    compute_num_rows(num_data_block);
-
-    size_ht = x * sizeof(struct ht_valid_entry);
-
-    hash_table_valid = (struct ht_valid_entry *)kmalloc(size_ht, GFP_KERNEL);
-
-    if(hash_table_valid == NULL)
-    {
-        printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Errore esecuzione kmalloc() nell'allocazione della memoria per la tabella hash.\n", MOD_NAME);
-
-        for(index=0;index<sbi->num_block_state;index++)
-        {   
-            kfree(bitmask[index]);        
-        }
-
-        kfree(bitmask);
-
-        bitmask = NULL;
-
-        printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Deallocazione bitmask completata con successo...\n", MOD_NAME);
-
-        for(index=0; index<actual_size; index++)
-        {
-            roll_bf = head_free_block_list->next;
-
-            kfree(head_free_block_list);
-
-            head_free_block_list = roll_bf;
-        }
-
-        if(head_free_block_list != NULL)
-        {
-            printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Errore nella deallocazione della FREE LIST... La lista non è vuota al termine della deallocazione\n", MOD_NAME);
-        }
-        else
-        {
-            printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Deallocazione della FREE LIST completata con successo...\n", MOD_NAME);
-        }
-
-        is_free = 1;
-
-        return 1;
-    }
-
-    for(index=0;index<x;index++)
-    {
-        (&hash_table_valid[index])->head_list = NULL;
-    }
-    
-    ret = init_ht_valid_and_sorted_list(num_data_block);
+    /* Inizializzo la struttura dati Sorted List */
+    ret = init_sorted_list(num_data_block);
 
     if(ret)
     {
-        printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Errore inizializzazione HT e sorted_list\n", MOD_NAME);
+        printk("%s: [ERRORE INIZIALIZZAZIONE CORE] L'inizializzazione della Sorted List non si è conclusa con successo\n", MOD_NAME);
 
-        for(index=0;index<sbi->num_block_state;index++)
-        {   
-            kfree(bitmask[index]);        
-        }
-
-        kfree(bitmask);
-
-        bitmask = NULL;
-
-        printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Deallocazione bitmask completata con successo...\n", MOD_NAME);
+        /* Dealloco la struttura dati free_block_list precedentemente allocata */
 
         for(index=0; index<actual_size; index++)
         {
@@ -1914,44 +1299,37 @@ int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint
 
         if(head_free_block_list != NULL)
         {
-            printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Errore nella deallocazione della FREE LIST... La lista non è vuota al termine della deallocazione\n", MOD_NAME);
+            printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Errore nella deallocazione della FREE LIST\n", MOD_NAME);
         }
         else
         {
-            printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Deallocazione della FREE LIST completata con successo...\n", MOD_NAME);
+            printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Deallocazione della FREE LIST completata con successo\n", MOD_NAME);
         }
-    
-        is_free = 1;
 
         return 1;
     }
+
+    /* Inizializzazione della struttura dati per la gestione del Grace Period */
 
     gp = (struct grace_period *)kmalloc(sizeof(struct grace_period), GFP_KERNEL);
 
     if(gp == NULL)
     {
-        printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Errore inizializzazione grace period\n", MOD_NAME);
-
+        printk("%s: [ERRORE INIZIALIZZAZIONE CORE] Errore inizializzazione struttura dati per il grace period\n", MOD_NAME);
         free_all_memory();
-
-        is_free = 1;
-
         return 1;
     }
 
-    gp->epoch_ht = 0x0;
     gp->epoch_sorted = 0x0;
 
-    gp->next_epoch_index_ht = 0x1;
     gp->next_epoch_index_sorted = 0x1;
 
     for(i=0;i<EPOCHS;i++)
     {
-        gp->standing_ht[i] = 0x0;
         gp->standing_sorted[i] = 0x0;
     }
 
-    //debugging_init();
+    debugging_init();
 
     return 0;
 }

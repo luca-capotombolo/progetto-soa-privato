@@ -8,19 +8,19 @@
 
 
 ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t * off) {
-
+/*
     int index;
-    size_t bytes_copied;                /* Numero di bytes dei messaggi che sono stati già copiati */
-    size_t byte_to_copy_iter;           /* Numero di bytes che devono essere copiati nella iterazione corrente */
-    size_t len_msg;                     /* Dimensione del messaggio su cui si sta attualmente iteranod */
-    char *msg_to_copy;                  /* Messaggio che deve essere restituito al'utente */
+    size_t bytes_copied;                
+    size_t byte_to_copy_iter;           
+    size_t len_msg;                    
+    char *msg_to_copy;                  
     unsigned long ret;
     unsigned long my_epoch;
     struct block *curr;
     
     printk("%s: [READ DRIVER] E' stata invocata la funzione di lettura con la dimensione richiesta pari a %ld.", MOD_NAME, len);
 
-    /* Avviso l'inizio dell'esecuzione per il thread */
+
     __sync_fetch_and_add(&(num_threads_run),1);
 
     if(!is_mounted)
@@ -100,7 +100,7 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
 
         if(bytes_copied == len)
         {
-            /* La quantità di richiesta dall'utente è stata copiata con successo */
+
             printk("%s: [READ DRIVER] Il contenuto del device richiesto è stato letto con successo\n", MOD_NAME);
             break;
         }
@@ -109,7 +109,7 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
 
         if( (bytes_copied + len_msg + 1) >= len)
         {
-            byte_to_copy_iter = len - bytes_copied - 1;                            /* Tengo conto anche del terminatore di stringa */
+            byte_to_copy_iter = len - bytes_copied - 1;                            
 
             if(byte_to_copy_iter > 0)
             {
@@ -169,6 +169,8 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
     wake_up_umount();
 
     return bytes_copied - ret;
+*/
+    return 0;
 
 }
 

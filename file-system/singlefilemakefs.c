@@ -284,6 +284,8 @@ int main(int argc, char *argv[])
 
         block->pos = metadata;
 
+        block->dim = 0;
+
         metadata += 1;
         
         sprintf(block->msg, file_body, i);

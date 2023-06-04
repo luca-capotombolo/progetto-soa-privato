@@ -71,7 +71,8 @@ struct soafs_inode {
 /* Rappresenta il contenuto di un singolo blocco del dispositivo */
 struct soafs_block {
     uint64_t pos;
-    char msg[SOAFS_BLOCK_SIZE - (sizeof(uint64_t))];
+    unsigned short dim;
+    char msg[SOAFS_BLOCK_SIZE - (sizeof(uint64_t) + sizeof(unsigned short))];
 };
 
 
