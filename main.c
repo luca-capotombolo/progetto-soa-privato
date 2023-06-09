@@ -139,7 +139,7 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
 
     if(bh == NULL)
     {
-        printk("%s: Errore nella lettura del blocco %lld dal dispositivo\n", MOD_NAME, offset);
+        printk("%s: [ERRORE GET DATA] Errore nella lettura del blocco %lld dal dispositivo\n", MOD_NAME, offset);
         wake_up_umount();
         return -EIO;
     }
@@ -148,7 +148,7 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
 
     dim = b->dim;
 
-    printk("%s: Dimensione del messaggio contenuto nel blocco %lld: %d\n", MOD_NAME, offset, dim);
+    printk("%s: [GET DATA] Dimensione del messaggio contenuto nel blocco %lld: %d\n", MOD_NAME, offset, dim);
 
     /* Determino quanti bytes devono effettivamente essere copiati per l'utente */
     if(size > dim)

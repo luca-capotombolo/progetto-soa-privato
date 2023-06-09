@@ -488,6 +488,8 @@ sleep_again:
 
     wait_event_interruptible_timeout(the_queue, gp->standing_sorted[index_sorted] >= grace_period_threads_sorted, msecs_to_jiffies(100));
 
+    printk("p->standing_sorted[index_sorted] = %ld\tgrace_period_threads_sorted = %ld\n", gp->standing_sorted[index_sorted], grace_period_threads_sorted);
+
 #ifdef NOT_CRITICAL_BUT_HK
     printk("%s: gp->standing_sorted[index_sorted] = %ld\tgrace_period_threads_sorted = %ld\n", MOD_NAME, gp->standing_sorted[index_sorted], grace_period_threads_sorted);
 #endif
@@ -795,16 +797,13 @@ retry_flush_valid_block:
         goto retry_flush_valid_block;
     }
 
-    printk("%s: Flush dei blocchi validi eseguito con successo\n", MOD_NAME);
+    printk("%s: [SMONTAGGIO] Flush dei blocchi validi eseguito con successo\n", MOD_NAME);
 
     free_all_memory();
 
     printk("%s: [SMONTAGGIO] Le strutture dati core del modulo sono state deallocate con successo\n", MOD_NAME);
 
 exit_kill_sb:
-
-    if(gp!=NULL)
-        kfree(gp);
 
     kill_block_super(sb);
 
