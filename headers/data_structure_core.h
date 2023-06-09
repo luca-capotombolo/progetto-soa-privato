@@ -9,11 +9,13 @@
 #define MASK_NUMINSERT 0X7FFFFFFFFFFFFFFF
 
 
-/*
- * La struttura dati 'block' rappresenta un singolo
- * elemento che viene inserito all'interno della lista
- * sorted_list. Rappresenta un blocco del device che
- * mantiene un messaggio valido.
+/**
+ * @block_index: Indice del blocco occupato
+ * @pos: Posizione del blocco all'interno della lista ordinata
+ * @sorted_list_next: Puntatore all'elemento successivo nella lista ordinata
+ *
+ * Rappresenta un singolo blocco che viene inserito all'interno della lista sorted_list.
+ * Questo blocco del device che mantiene un messaggio valido.
  */
 struct block {
     uint64_t block_index;
@@ -23,11 +25,12 @@ struct block {
 
 
 
-/*
- * La struttura dati 'block_free' rappresenta un singolo
- * elemento che viene inserito all'interno della lista
- * free_block_list che mantiene le informazioni su un
- * blocco libero.
+/**
+ * @block_index: Indice del blocco libero
+ * @next: Puntatore all'elemento successivo nella lista dei blocchi liberi
+ *
+ * Rappresenta un singolo elemento che viene inserito all'interno della lista
+ * free_block_list che mantiene le informazioni su un blocco libero.
  */
 struct block_free {
     uint64_t block_index;
@@ -36,6 +39,7 @@ struct block_free {
 
 
 
+/* Questa struttura dati viene utilizzata per la gestione del Grace Period */
 struct grace_period {
     unsigned long standing_sorted[EPOCHS];
     unsigned long epoch_sorted;
@@ -44,21 +48,21 @@ struct grace_period {
 
 
 
+extern int is_free;
+extern uint64_t num_block_free_used;
 extern struct block *head_sorted_list;                          /* Puntatore alla testa della lista contenente i blocchi nell'ordine di consegna. */
 extern struct block_free *head_free_block_list;                 /* Puntatore alla testa della lista contenente i blocchi liberi. */
 extern struct grace_period *gp;
 
-extern uint64_t num_block_free_used;                            /* Numero di blocchi liberi (istante t = 0) utilizzati. */
-extern uint64_t empty_actual_size;                              /* Il numero massimo di blocchi che carico quando la free list si svuota. */
-extern int is_free;
+
 
 extern int init_data_structure_core(uint64_t num_data_block, uint64_t *index_free, uint64_t actual_size);
 extern int check_bit(uint64_t index);
-extern struct block_free * get_freelist_head(void);
 extern int set_bitmask(uint64_t index, int mode);
 extern int get_bitmask_block(void);
-extern void insert_free_list_conc(struct block_free *item);
 extern int insert_sorted_list_conc(struct block *block);
 extern int invalidate_block(uint64_t index);
+extern void insert_free_list_conc(struct block_free *item);
+extern struct block_free * get_freelist_head(void);
 
 #endif //data_structure_core.h

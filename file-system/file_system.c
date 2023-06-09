@@ -22,12 +22,6 @@
  */
 int is_mounted = 0;
 
-/*
- * Questa variabile mi assicura che il thread incaricato dello smontaggio del
- * FS riuscirà effettivamente a smontarlo.
- */                                          
-int stop = 1;
-
 /* 
  * Questa variabile rappresente il numero di threads che sono attualmente
  * in esecuzione. Viene utilizzata per capire se è possibile o meno eseguire
@@ -36,18 +30,17 @@ int stop = 1;
  */                                      
 uint64_t num_threads_run = 0;                                   
 
-struct super_block *sb_global = NULL;                           /* Riferimento al superblocco. */
+/* Riferimento al superblocco. */
+struct super_block *sb_global = NULL;                           
 
-/*
- * Questa variabile viene utilizzata per verificare se le strutture dati
- * core del modulo sono state già deallocate.
- */
+/* Questa variabile viene utilizzata per verificare se bisogna deallocare le strutture dati core del modulo */
 int is_free = 0;
 
-int kernel_thread_ok = 0;                                       /* Esistenza del kernel thread */
+/* Esistenza del kernel thread */
+int kernel_thread_ok = 0;
 
-
-
+/* Inizialmente, i threads non possono operare sul FS e devono essere bloccati */
+int stop = 1;    
 
 
 static struct super_operations soafs_super_ops = {
@@ -340,7 +333,7 @@ static int flush_valid_block(void)
 
 
 
-/*
+/**
  * free_all_memory - Dealloca le strutture dati core del modulo
  * 
  * Questa funzione ha il compito di deallocare le strutture dati core che sono
@@ -740,12 +733,15 @@ static void soafs_kill_sb(struct super_block *sb)
     if(!ret)
         goto exit_umount_soafs;
 
+    __sync_fetch_and_add(&stop, 1);
+
     /* Attendo che i threads in esecuzione terminino di lavorare sul FS */
 
-    if(num_threads_run > 0)
-        wait_event_interruptible(umount_queue, num_threads_run == 0);
+    while(num_threads_run != 0)
+        wait_event_interruptible_timeout(umount_queue, num_threads_run == 0, msecs_to_jiffies(100));
 
-    /* La variabile is_free è settata a 1 nel momento in cui non si deve eseguire il processo di
+    /*
+     * La variabile 'is_free' è settata a 1 nel momento in cui non si deve eseguire il processo di
      * deallocazione delle strutture dati. Le strutture dati sono state precedentemente deallocate
      * e non ci sono informazioni che devono essere riportate sul dispositivo.
      */
@@ -769,7 +765,7 @@ retry_set_free_block:
         goto retry_set_free_block;
     }
 
-    printk("%s: Settaggio dei blocchi liberi per il montaggio successivo eseguito con successo\n", MOD_NAME);
+    printk("%s: [SMONTAGGIO] Settaggio dei blocchi liberi per il montaggio successivo eseguito con successo\n", MOD_NAME);
 
     n = 0;
 
@@ -784,7 +780,7 @@ retry_flush_bitmask:
         goto retry_flush_bitmask;
     }
 
-    printk("%s: Flush della bitmask eseguito con successo\n", MOD_NAME);
+    printk("%s: [SMONTAGGIO] Flush della bitmask eseguito con successo\n", MOD_NAME);
 
     n = 0;
 
@@ -803,13 +799,19 @@ retry_flush_valid_block:
 
     free_all_memory();
 
-    printk("%s: Le strutture dati core del modulo sono state deallocate con successo\n", MOD_NAME);
+    printk("%s: [SMONTAGGIO] Le strutture dati core del modulo sono state deallocate con successo\n", MOD_NAME);
 
 exit_kill_sb:
+
+    if(gp!=NULL)
+        kfree(gp);
 
     kill_block_super(sb);
 
     is_free = 0;
+
+    if(sync_var)
+        printk("%s: Errore nel valore della variabile sync_var\n", MOD_NAME);
 
 //    sync_var = 0;
 
@@ -837,7 +839,7 @@ static struct dentry *soafs_mount(struct file_system_type *fs_type, int flags, c
 
     if(!ret_cmp)
     {
-        printk("%s: [ERRORE MONTAGGIO] Il FS '%s'è stato già montato oppure il montaggio è in corso\n", MOD_NAME, fs_type->name);
+        printk("%s: [ERRORE MONTAGGIO] Il FS '%s' è stato già montato oppure il montaggio è in corso di esecuzione\n", MOD_NAME, fs_type->name);
         return ERR_PTR(-EINVAL);
     }
     
@@ -845,12 +847,12 @@ static struct dentry *soafs_mount(struct file_system_type *fs_type, int flags, c
 
     if (unlikely(IS_ERR(ret)))
     {
-        __sync_fetch_and_sub(&is_mounted,1);                /* Riporto il valore della variabile 'is_mounted' a 0 */
-
+        __sync_fetch_and_sub(&is_mounted,1);
         printk("%s: [ERRORE MONTAGGIO] Errore durante il montaggio del File System di tipo %s\n",MOD_NAME, fs_type->name);
     }
     else
     {
+        __sync_fetch_and_sub(&stop, 1);
         printk("%s: [MONTAGGIO] Montaggio del File System sul device %s avvenuto con successo.\n",MOD_NAME,dev_name);
     }
 

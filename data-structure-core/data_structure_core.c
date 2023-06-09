@@ -18,7 +18,7 @@ uint64_t sync_var = 0;                              /* Variabile per la sincroni
 
 
 
-/*
+/**
  * scan_free_list - Esegue la scansione della struttura dati free_block_list
  *
  * Questa funzione ha prevalentemente uno scopo per il debugging del modulo
@@ -31,7 +31,7 @@ static void scan_free_list(void)
 
     curr = head_free_block_list;
 
-    printk("\n\n%s: ------------------------------ INIZIO FREE LIST ---------------------------------------", MOD_NAME);
+    printk("%s: ------------------------------ INIZIO FREE LIST ---------------------------------------", MOD_NAME);
 
     while(curr!=NULL)
     {
@@ -45,7 +45,7 @@ static void scan_free_list(void)
 
 
 
-/*
+/**
  * scan_sorted_list - Esegue la scansione della struttura dati Sorted List
  *
  * Questa funzione ha prevalentemente uno scopo per il debugging del modulo
@@ -72,7 +72,7 @@ static void scan_sorted_list(void)
 
 
 
-/*
+/**
  * debugging_init - Esegue la scansione delle strutture dati core del modulo
  *
  * Questa funzione ha prevalentemente uno scopo per il debugging del modulo
@@ -116,7 +116,7 @@ retry_insert_free_list_conc:
 
 
 
-/*
+/**
  * check_consistenza - Controllo sull'inizializzazione della lista dei blocchi liberi
  * 
  * Questa funzione implementa un semplice controllo sulla consistenza delle informazioni
@@ -213,7 +213,7 @@ retry_freelist_head:
 
 
 
-/*
+/**
  * check_bit - Verifica la validità di un blocco di dati
  *
  * @index: Indice del blocco di cui si vuole verificare la validità
@@ -269,7 +269,7 @@ int check_bit(uint64_t index)
 
 
 
-/*
+/**
  * get_bitmask_block - Recupera gli indici dei blocchi liberi e li inserisce nella free_block_list
  *
  * Per eseguire la ricerca degli indici di nuovi blocchi liberi, si utilizza la struttura dati
@@ -410,7 +410,7 @@ retry_get_bitmask_block:
 
 
 
-/*
+/**
  * insert_free_list - Inserisce un nuovo elemento all'interno della lista free_block_list
  *
  * @index: Indice del blocco libero da inserire nella lista
@@ -455,7 +455,7 @@ int insert_free_list(uint64_t index)
 
 
 
-/*
+/**
  * init_free_block_list - Inizializzazione della free_block_list
  * 
  * @index_free: L'array contenente gli indici dei blocchi liberi che si vogliono
@@ -559,7 +559,7 @@ int init_free_block_list(uint64_t *index_free, uint64_t actual_size)
 
 
 
-/*
+/**
  * set_bitmask - Modifica le informazioni di validità dei blocchi all'interno della bitmask
  *
  * @index: Indice del blocco di cui si vuole cambiare la stato di validità
@@ -620,7 +620,7 @@ int set_bitmask(uint64_t index, int mode)
 
 
 
-/*
+/**
  * remove_block - Rimozione del blocco target dalla Sorted List
  *
  * @index: Indice del blocco che deve essere rimosso dalla lista
@@ -698,7 +698,9 @@ static struct block *remove_block(uint64_t index)
     return curr;
 }
 
-/*
+
+
+/**
  * invalidate_block - Invalida un blocco contenente un messaggio utente valido
  *
  * @index: Indice del blocco che deve essere invalidato
@@ -877,7 +879,7 @@ retry_kmalloc_invalidate_block:
 
 
 
-/*
+/**
  * insert_sorted_list_conc - Inserimento di un nuovo elemento nella Sorted List
  *
  * @block: Il nuovo elemento da aggiungere all'interno della lista
@@ -1020,7 +1022,7 @@ no_empty:
 }
 
 
-/*
+/**
  * insert_sorted_list - Inserisce un nuovo elemento all'interno della Sorted List
  *
  * @block: Il nuovo elemento da inserire all'interno della lista
@@ -1035,7 +1037,7 @@ void insert_sorted_list(struct block *block)
     struct block *prev;
     struct block *curr;
 
-    /* Verifico se il blocco deve essere inserito in testa alla Sorted List. */
+    /* Verifico se il blocco deve essere inserito in testa alla Sorted List */
 
     if(head_sorted_list == NULL)
     {
@@ -1082,7 +1084,7 @@ void insert_sorted_list(struct block *block)
 
 
 
-/*
+/**
  * init_sorted_list - Inizializzazione della struttura dati Sorted List
  *
  * @num_data_block: Numero dei blocchi di dati del dispositivo
@@ -1104,10 +1106,7 @@ int init_sorted_list(uint64_t num_data_block)
 
     sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
 
-    /* 
-     * Verifico se attualmente non esiste alcun blocco valido. In questo caso, la
-     * lista risulta essere composta solamente dall'elemento DUMMY.
-     */    
+    /* Verifico se attualmente non esiste alcun blocco valido. */    
 
     if(sbi->num_block_free == (sbi->num_block - 2 - sbi->num_block_state))
     {
@@ -1188,7 +1187,7 @@ rollback_init_sorted:
 
 
 
-/*
+/**
  * init_data_structure_core - Inizializzazione delle strutture dati core del modulo
  *
  * @num_data_block: Numero dei blocchi di dati del dispositivo

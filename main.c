@@ -19,8 +19,8 @@ MODULE_AUTHOR(AUTHOR);
 MODULE_DESCRIPTION(DESCRIPTION);
 
 /*
- * Questo mutex mi consente di gestire il caricamento delle informazioni relative ai blocchi liberi
- * all'interno della lista un thread alla volta.
+ * Questo mutex mi consente di gestire un thread alla volta il caricamento delle informazioni
+ * relative ai blocchi liberi all'interno della lista.
  */
 static DEFINE_MUTEX(free_list_mutex);
 unsigned long the_syscall_table = 0x0;
@@ -28,6 +28,7 @@ module_param(the_syscall_table, ulong, 0660);
 unsigned long the_ni_syscall;
 unsigned long new_sys_call_array[] = {0x0, 0x0, 0x0};
 int restore[HACKED_ENTRIES] = {[0 ... (HACKED_ENTRIES-1)] -1};
+
 
 
 /*
@@ -38,7 +39,7 @@ int restore[HACKED_ENTRIES] = {[0 ... (HACKED_ENTRIES-1)] -1};
  *
  * Restituisce il valore 0 in caso di offset corretto; altrimenti, restituisce 1.
  */
-static int check_offset(int offset, struct soafs_sb_info *sbi)
+int check_offset(int offset, struct soafs_sb_info *sbi)
 {
     /*
      * Tengo conto dei primi due blocchi, contenenti rispettivamente
@@ -63,7 +64,7 @@ static int check_offset(int offset, struct soafs_sb_info *sbi)
  *
  * Restituisce il valore 0 in caso di size corretta; altrimenti, restituisce 1.
  */
-static int check_size(size_t size)
+int check_size(size_t size)
 {
 
     if(size <= 0)
@@ -91,17 +92,6 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
 #ifdef LOG
     LOG_SYSTEM_CALL("GET_DATA", "get_data");
 #endif
-    
-    /* Comunica la sua presenza ad un eventuale thread che deve eseguire lo smontaggio */
-    __sync_fetch_and_add(&(num_threads_run),1);
-
-    /* Verifico se il dispositivo è stato montato */
-    if(!is_mounted)
-    {
-        wake_up_umount();
-        LOG_DEV_ERR("GET_DATA", "get_data");
-        return -ENODEV;
-    }
 
     sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
     
@@ -109,8 +99,24 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
     if( check_offset(offset, sbi) || check_size(size) )
     {
         LOG_PARAM_ERR("GET_DATA", "get_data");
-        wake_up_umount();
         return -EINVAL;
+    }
+
+    if(!is_mounted)
+    {
+        LOG_DEV_ERR("GET_DATA", "get_data");
+        return -ENODEV;
+    }
+    
+    /* Comunica la sua presenza ad un eventuale thread che deve eseguire lo smontaggio */
+    __sync_fetch_and_add(&(num_threads_run),1);
+
+    /* Verifico se può effettivamente eseguire le proprie attività */
+    if(stop)
+    {
+        wake_up_umount();
+        LOG_DEV_ERR("GET_DATA", "get_data");
+        return -ENODEV;
     }
    
     /*
@@ -159,8 +165,7 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
     printk("%s: [GET DATA] Il messaggio del blocco %lld è stato consegnato con successo\n", MOD_NAME, offset);
 #endif
 
-    return (byte_copy - byte_ret);
-	
+    return (byte_copy - byte_ret);	
 }
 
 
@@ -187,23 +192,28 @@ asmlinkage uint64_t sys_put_data(char * source, size_t size){
     LOG_SYSTEM_CALL("PUT_DATA", "put_data");
 #endif
 
-   /* Comunica la sua presenza ad un eventuale thread che deve eseguire lo smontaggio */
-    __sync_fetch_and_add(&(num_threads_run),1);
-
-    /* Verifico se il dispositivo è stato montato */
-    if(!is_mounted)
-    {
-        wake_up_umount();
-        LOG_DEV_ERR("PUT_DATA", "put_data");
-        return -ENODEV;
-    }
-
     /* Eseguo il controllo sulla dimensione richiesta dall'utente */
     if(check_size(size))
     {
         LOG_PARAM_ERR("PUT_DATA", "put_data");
-        wake_up_umount();
         return -EINVAL;
+    }
+
+    if(!is_mounted)
+    {
+        LOG_DEV_ERR("GET_DATA", "get_data");
+        return -ENODEV;
+    }
+    
+    /* Comunica la sua presenza ad un eventuale thread che deve eseguire lo smontaggio */
+    __sync_fetch_and_add(&(num_threads_run),1);
+
+    /* Verifico se può effettivamente eseguire le proprie attività */
+    if(stop)
+    {
+        wake_up_umount();
+        LOG_DEV_ERR("GET_DATA", "get_data");
+        return -ENODEV;
     }
 
     sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
@@ -409,25 +419,30 @@ asmlinkage int sys_invalidate_data(uint64_t offset){
     LOG_SYSTEM_CALL("INVALIDATE DATA", "invalidate_data");
 #endif
 
-    /* Comunica la sua presenza ad un eventuale thread che deve eseguire lo smontaggio */
-    __sync_fetch_and_add(&(num_threads_run),1);
-
-    /* Verifico se il dispositivo è stato montato */
-    if(!is_mounted)
-    {
-        wake_up_umount();
-        LOG_DEV_ERR("INVALIDATE DATA", "invalidate_data");
-        return -ENODEV;
-    }
-
     sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
 
     /* Eseguo il controllo sull'offset del blocco richiesto dall'utente */
     if( check_offset(offset, sbi) )
     {
-        LOG_PARAM_ERR("INVALIDATE DATA", "invalidate_data");    
-        wake_up_umount();
+        LOG_PARAM_ERR("INVALIDATE DATA", "invalidate_data");
         return -EINVAL;
+    }
+
+    if(!is_mounted)
+    {
+        LOG_DEV_ERR("GET_DATA", "get_data");
+        return -ENODEV;
+    }
+    
+    /* Comunica la sua presenza ad un eventuale thread che deve eseguire lo smontaggio */
+    __sync_fetch_and_add(&(num_threads_run),1);
+
+    /* Verifico se può effettivamente eseguire le proprie attività */
+    if(stop)
+    {
+        wake_up_umount();
+        LOG_DEV_ERR("GET_DATA", "get_data");
+        return -ENODEV;
     }
 
     /*

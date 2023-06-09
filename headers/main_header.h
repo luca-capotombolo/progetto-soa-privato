@@ -63,33 +63,47 @@ struct result_inval {
 };
 
 /*
- * Il primo bit identificato tramite la maschera di bit
- * MASK_INVALIDATE rappresenta l'esistenza di un thread
- * che sta invalidando un blocco. I restanti bit sono il
- * numero di thread impegnati nell'operazione di insert
- * di un nuovo blocco.
- * Questa variabile consente di sincronizzare le operazioni
- * di inserimento e l'operazione di invalidazione. Gli unici
- * scenari consentiti sono i seguenti:
- * 1. Non ci sono nè inserimenti né invalidazioni.
+ * Il primo bit, identificato tramite la maschera di bit MASK_INVALIDATE,
+ * codifica l'esistenza di un thread che sta invalidando un blocco. I
+ * restanti bit sono il numero di thread impegnati nell'operazione di
+ * insert di un nuovo blocco.
+ * Questa variabile consente di sincronizzare le operazioni di inserimento
+ * e l'operazione di invalidazione. Gli unici scenari consentiti sono i
+ * seguenti:
+ * 1. Non ci sono nè inserimenti nè invalidazioni.
  * 2. Ho un numero arbitrario di inserimenti e nessuna
  *    invalidazione.
  * 3. Ho un'unica invalidazione e nessun inserimento.
  */
 extern uint64_t sync_var;
 
+/* 
+ * Rappresenta il numero di threads che correntemente sono in esecuzione e
+ * che potrebbero lavorare sul FS. E' necessario tenere conto di questi
+ * thread in modo da eseguire correttamente lo smontaggio. Infatti, questa
+ * variabile viene incrementata e decrementata all'interno delle varie
+ * system call e all'interno del driver per poi essere utilizzata nella
+ * funzione di smontaggio come check per poter smontare il FS.
+ */
 extern uint64_t num_threads_run;
 
-// extern int stop;
+/*
+ * Permette di implementare una 'barriera' che blocca i threads in modo
+ * da evitare che essi operino sul FS. Se il valore della variabile è
+ * pari ad 1 allora il thread non è autorizzato ad accedere al device; 
+ * altrimenti, è possibile usufruire dei servizi messi a disposizione. 
+ */
+extern int stop;
 
+/* Mi consente di gestire la concorrenza tra un'invalidazione e gli inserimenti */
 static DEFINE_MUTEX(inval_insert_mutex);
+
+/* Mi consente di avere una sola invalidazione alla volta */
+static DEFINE_MUTEX(invalidate_mutex);
 
 static DECLARE_WAIT_QUEUE_HEAD(the_queue);
 
 static DECLARE_WAIT_QUEUE_HEAD(umount_queue);
-
-/* Questo mutex mi consente di avere una sola invalidazione alla volta */
-static DEFINE_MUTEX(invalidate_mutex);
                                                 
 
 #endif
