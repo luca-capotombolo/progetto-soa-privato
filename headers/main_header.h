@@ -59,7 +59,7 @@
 
 struct result_inval {
     int code;
-    struct block *block;
+    struct buffer_head *bh;
 };
 
 /*

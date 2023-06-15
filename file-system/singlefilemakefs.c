@@ -282,8 +282,6 @@ int main(int argc, char *argv[])
 
         memset(block, 0, sizeof(struct soafs_block));
 
-        block->pos = metadata;
-
         block->dim = 0;
 
         metadata += 1;

@@ -93,6 +93,7 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
     LOG_SYSTEM_CALL("GET_DATA", "get_data");
 #endif
 
+    /* Recupero le informazioni FS specific */
     sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
     
     /* Controllo la validità dei parametri che sono stati passati dall'utente */
@@ -180,13 +181,8 @@ asmlinkage uint64_t sys_put_data(char * source, size_t size){
     int available_data;
     size_t msg_size; 
     uint64_t index;
-    uint64_t num_block_state;
-    unsigned long bytes_ret; 
-    struct buffer_head *bh;
-    struct soafs_block *b;
     struct block_free *item;
     struct soafs_sb_info *sbi;
-    struct block *block;
 
 #ifdef LOG
     LOG_SYSTEM_CALL("PUT_DATA", "put_data");
@@ -216,9 +212,10 @@ asmlinkage uint64_t sys_put_data(char * source, size_t size){
         return -ENODEV;
     }
 
+    /* Recupero le informazioni FS specific */
     sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
 
-    /* Verifico se vale la pena eseguire una ricerca dei blocchi liberi oppure sono già tutti occupati */
+    /* Verifico se i blocchi sono già tutti occupati */
 
     if( (head_free_block_list == NULL) && (num_block_free_used == sbi->num_block_free) )
     {
@@ -311,85 +308,28 @@ retry:
     /* Recupero l'indice del blocco libero da utilizzare per scrivere il nuovo messaggio */
     index = item -> block_index;
 
-#ifdef NOT_CRITICAL_PUT
     printk("%s: [PUT DATA] Indice del blocco libero da utilizzare - %lld\n", MOD_NAME, index);
-#endif
-
-    sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
-
-    num_block_state = sbi->num_block_state;
-
-    /* Leggo il blocco target dal dispositivo */
-    bh = sb_bread(sb_global, 2 + num_block_state + index);
-
-    if(bh == NULL)
-    {
-        printk("%s: [ERRORE PUT DATA] Errore nella lettura del blocco %lld dal device\n", MOD_NAME, index);
-        insert_free_list_conc(item);
-        wake_up_umount();
-        return -EIO;
-    }
-
-    b = (struct soafs_block *)bh->b_data;
 
     /* Calcolo la dimensione massima del messaggio che può essere memorizzato nel blocco */
+
     available_data = SOAFS_BLOCK_SIZE - (sizeof(uint64_t) + sizeof(unsigned short));
 
     /* Determino la quantità di byte utente che dovranno essere scritti nel blocco */
+
     if(size > available_data)
         msg_size = available_data;  
     else
         msg_size = size;
 
-    bytes_ret = copy_from_user(b->msg, source, msg_size);
+    ret = insert_new_data_block(index, source, msg_size);
 
-#ifdef NOT_CRITICAL_PUT
-    printk("[PUT DATA] Numero di bytes non copiati da user space - %ld\n", bytes_ret);
-    printk("%s: [PUT DATA] E' stato richiesto di scrivere il messaggio '%s'", MOD_NAME, msg);
-#endif
-
-    b->dim = msg_size - bytes_ret;
-
-    /* Inserisco in modo concorrente l'indice del blocco all'interno della Sorted List */
-
-    /* Alloco il nuovo blocco che dovrà essere inserito all'interno della Sorted List */
-    block = (struct block *)kmalloc(sizeof(struct block), GFP_KERNEL);
-
-    if(block == NULL)
+    if(ret)
     {
-        printk("%s: [ERRORE PUT DATA] Errore nell'allocazione del blocco da inserire nella Sorted List\n", MOD_NAME);
-        brelse(bh);
+        printk("%s: [ERRORE PUT DATA] Errore nell'inserimento del blocc %lld all'interno della Sorted List\n", MOD_NAME, index);
         insert_free_list_conc(item);
         wake_up_umount();
         return -EIO;
     }
-
-    /* Popolo il nuovo elemento da inserire nella lista */
-    block->block_index = index;
-
-    ret = insert_sorted_list_conc(block);
-
-    if(ret)
-    {
-        printk("%s: Si è verificato un errore nell'inserimento all'interno della Sorted List per il blocco %lld\n", MOD_NAME, index);
-        brelse(bh);
-        insert_free_list_conc(item);
-        kfree(block);
-        wake_up_umount();
-        return -ENOMEM;
-    }
-
-    mark_buffer_dirty(bh);
-
-#ifdef SYNC
-    sync_dirty_buffer(bh);
-#endif
-
-    brelse(bh);
-
-#ifdef NOT_CRITICAL_PUT
-    printk("%s: [PUT DATA] Terminata esecuzione flush dei dati sul device\n", MOD_NAME);
-#endif
    
     kfree(item);
     
@@ -447,7 +387,7 @@ asmlinkage int sys_invalidate_data(uint64_t offset){
 
     /*
      * Verifico la validità del blocco richiesto dall'utente. Se il blocco è
-     * già invalido allora la system call termina immediatamente con un codice
+     * già non valido allora la system call termina immediatamente con un codice
      * di errore.
      */
     if(!check_bit(offset))
@@ -460,9 +400,9 @@ asmlinkage int sys_invalidate_data(uint64_t offset){
         return -ENODATA;
     }
 
-    // Rimuovi il blocco dalla lista Sorted List e modifica il bit nella bitmask.
-    ret = invalidate_block(offset);
-/*
+    /* Rimuovi il blocco dalla lista Sorted List e modifica il bit di stato nella bitmask */
+    ret = invalidate_data_block(offset);
+
     if(ret)
     {
 
@@ -474,7 +414,7 @@ asmlinkage int sys_invalidate_data(uint64_t offset){
 
         return -ENODATA;
     }
-*/
+
 
 #ifdef NOT_CRITICAL_BUT_INVAL
     printk("%s: [INVALIDATE DATA] L'invalidazione del blocco %lld è stata eseguita con successo\n", MOD_NAME, offset);

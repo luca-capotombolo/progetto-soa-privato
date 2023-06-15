@@ -55,14 +55,14 @@ static struct dentry_operations soafs_dentry_ops = {
 
 
 
-/*
+/**
  * set_free_block - Gestione delle informazioni relative ai blocchi liberi all'istante dello smontaggio
  * 
  * Questa funzione ha il compito di determinare i primi blocchi liberi nel device. Il numero massimo di
  * blocchi liberi che può essere caricato all'interno dell'array index_free è pari a 'update_list_size'.
  * Inoltre, la funzione determina anche il numero totale dei blocchi liberi nel device.
  *
- * La funzione restituisce 0 in caso di successo; altrimenti restituisce il valore 1.
+ * @returns: La funzione restituisce 0 in caso di successo; altrimenti restituisce il valore 1.
  */
 static int set_free_block(void)
 {
@@ -118,7 +118,7 @@ static int set_free_block(void)
         return 0;
     }
 
-    /* Alloco la struttura dati per memorizza gli indici dei blocchi liberi */
+    /* Alloco la struttura dati per memorizzare gli indici dei blocchi liberi */
 
     free_blocks = (uint64_t *)kzalloc(sizeof(uint64_t) * update_list_size, GFP_KERNEL);
 
@@ -208,10 +208,10 @@ void wake_up_umount(void)
 
 
 
-/*
+/**
  * flush_bitmask - Riporta le modifiche sul dispositivo rilasciando la memoria del page cache
  *
- * La funzione restituisce il valore 0 in caso di successo; altrimenti restituisce il valore 1.
+ * @returns: La funzione restituisce il valore 0 in caso di successo; altrimenti restituisce il valore 1.
  */
 static int flush_bitmask(void)
 {
@@ -258,80 +258,6 @@ static int flush_bitmask(void)
 
 
 
-/*
- * flush_valid_block - Riporta sul dispositivo il contenuto dei blocco validi.
- * 
- * Questa funzione ha il compito di riportare i messaggi utente validi all'interno dei
- * corrispondenti blocchi nel dispositivo.
- *
- * Restituisce il valore 0 in caso di successo; altrimenti, viene restituito il valore 1.
- */
-static int flush_valid_block(void)
-{
-    uint64_t index;
-    uint64_t num_block_state;
-    uint64_t pos;
-    struct buffer_head *bh;
-    struct block *curr;
-    struct soafs_sb_info *sbi;
-    struct soafs_block *b;
-
-    /* Recupero il riferimento alla testa della Sorted List */
-    curr = head_sorted_list;
-
-    if(curr == NULL)
-    {
-        printk("%s: [SMONTAGGIO - FLUSH VALID BLOCK] Non ci sono messaggi validi da riportare sul dispositivo\n", MOD_NAME);
-        return 0;
-    }
-
-    /* Recupero il numero dei blocchi di stato nel dispositivo */
-    sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
-
-    num_block_state = sbi->num_block_state;
-    
-    /* Questa variabile mi consente di costruire la nuova sequenza dei messaggi validi */
-    pos = 0;
-    
-    while(curr != NULL)
-    {
-        /* Recupero l'indice del blocco di dati */
-        index = curr->block_index;
-
-#ifdef NOT_CRITICAL_INIT
-        printk("%s: [SMONTAGGIO - FLUSH VALID BLOCK]  Il blocco con indice %lld deve essere riportato su device\n", MOD_NAME, index);
-#endif
-
-        bh = sb_bread(sb_global, 2 + num_block_state + index);
-
-        if(bh == NULL)
-        {
-            printk("%s: [ERRORE SMONTAGGIO - FLUSH VALID BLOCK] Lettura del blocco #%lld dal page cache fallita\n", MOD_NAME, index);
-            return 1;
-        }
-
-        b = (struct soafs_block *)bh->b_data;
-
-        /* Modifico il metadato che rappresenta la posizione del blocco nella lista ordinata */
-        b->pos = pos;
-
-        mark_buffer_dirty(bh);
-
-        sync_dirty_buffer(bh);       
-
-        brelse(bh); 
-
-        curr = curr->sorted_list_next;
-
-        pos++;
-    }
-
-    printk("%s: [SMONTAGGIO - FLUSH VALID BLOCK] I blocchi validi sono stati riportati correttamente su device\n", MOD_NAME);
-    
-    return 0;
-}
-
-
 
 /**
  * free_all_memory - Dealloca le strutture dati core del modulo
@@ -340,12 +266,11 @@ static int flush_valid_block(void)
  * state utilizzate per l'attuale istanza di montaggio del FS. Le strutture dati
  * che devono essere deallocate sono la lista dei blocchi liberi e la Sorted List.
  *
- * La funzione non restituisce alcun valore.
+ * @returns: La funzione non restituisce alcun valore.
  */
 void free_all_memory(void)
 {
     struct block_free *next_bf;
-    struct block *next_b;
 
     /* Deallocazione degli elementi nella lista dei blocchi liberi */
 
@@ -370,36 +295,9 @@ void free_all_memory(void)
 
     printk("%s: [SMONTAGGIO - FREE MEMORY] La deallocazione dei blocchi dalla lista libera è stata completata con successo\n", MOD_NAME);        
 
-    /* Dealloco gli elementi che rappresentano i blocchi validi */
-
-    printk("%s: [SMONTAGGIO - FREE MEMORY] Inizio deallocazione della lista ordinata...\n", MOD_NAME);
-
-    while(head_sorted_list != NULL)
-    {
-        next_b = head_sorted_list->sorted_list_next;
-
-#ifdef NOT_CRITICAL_INIT
-        printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione blocco #%lld...\n", MOD_NAME, head_sorted_list->block_index);
-#endif
-
-        kfree(head_sorted_list);
-
-#ifdef NOT_CRITICAL_INIT
-        printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione blocco #%lld avvenuta con successo\n", MOD_NAME, head_sorted_list->block_index);
-#endif
-
-        head_sorted_list = next_b;
-    }
-    
-    printk("%s: [SMONTAGGIO - FREE MEMORY] Deallocazione dei blocchi dalla lista ordinata completata con successo\n", MOD_NAME);
-
-    /* Eseguo degli ulteriori check per verificare che le strutture dati siano state deallocate con successo */
 
     if(head_free_block_list != NULL)
         printk("%s: [ERRORE SMONTAGGIO - FREE MEMORY] La lista dei blocchi liberi non è vuota\n", MOD_NAME);
-
-    if(head_sorted_list != NULL)
-        printk("%s: [ERRORE SMONTAGGIO - FREE MEMORY] La lista dei blocchi ordinata non è vuota\n", MOD_NAME);
 }
 
 
@@ -786,19 +684,6 @@ retry_flush_bitmask:
 
     n = 0;
 
-retry_flush_valid_block:
-
-    ret = flush_valid_block();
-
-    if(ret)
-    {
-        n++;
-        printk("%s: [ERRORE SMONTAGGIO] Tentativo numero %d fallito per il salvataggio dei blocchi validi\n", MOD_NAME, n);
-        goto retry_flush_valid_block;
-    }
-
-    printk("%s: [SMONTAGGIO] Flush dei blocchi validi eseguito con successo\n", MOD_NAME);
-
     free_all_memory();
 
     printk("%s: [SMONTAGGIO] Le strutture dati core del modulo sono state deallocate con successo\n", MOD_NAME);
@@ -812,7 +697,7 @@ exit_kill_sb:
     if(sync_var)
         printk("%s: Errore nel valore della variabile sync_var\n", MOD_NAME);
 
-//    sync_var = 0;
+    sync_var = 0;
 
     printk("%s: [SMONTAGGIO] Il File System 'soafs' è stato smontato con successo.\n", MOD_NAME);
 
@@ -829,7 +714,7 @@ static struct dentry *soafs_mount(struct file_system_type *fs_type, int flags, c
     struct dentry *ret;
 
     /*
-     * Permetto un singolo montaggio alla volta. Se il valore della variabile'is_mounted' è pari a 0
+     * Permetto un singolo montaggio alla volta. Se il valore della variabile 'is_mounted' è pari a 0
      * allora significa che il thread può provare a montare il FS; altrimenti, il FS è stato già montato
      * oppure è in corso il montaggio per opera di qualche altro thread.
      */

@@ -9,21 +9,6 @@
 #define MASK_NUMINSERT 0X7FFFFFFFFFFFFFFF
 
 
-/**
- * @block_index: Indice del blocco occupato
- * @pos: Posizione del blocco all'interno della lista ordinata
- * @sorted_list_next: Puntatore all'elemento successivo nella lista ordinata
- *
- * Rappresenta un singolo blocco che viene inserito all'interno della lista sorted_list.
- * Questo blocco del device che mantiene un messaggio valido.
- */
-struct block {
-    uint64_t block_index;
-    uint64_t pos;      
-    struct block* sorted_list_next;
-};
-
-
 
 /**
  * @block_index: Indice del blocco libero
@@ -50,7 +35,7 @@ struct grace_period {
 
 extern int is_free;
 extern uint64_t num_block_free_used;
-extern struct block *head_sorted_list;                          /* Puntatore alla testa della lista contenente i blocchi nell'ordine di consegna. */
+//extern struct block *head_sorted_list;                          /* Puntatore alla testa della lista contenente i blocchi nell'ordine di consegna. */
 extern struct block_free *head_free_block_list;                 /* Puntatore alla testa della lista contenente i blocchi liberi. */
 extern struct grace_period *gp;
 
@@ -60,8 +45,8 @@ extern int init_data_structure_core(uint64_t num_data_block, uint64_t *index_fre
 extern int check_bit(uint64_t index);
 extern int set_bitmask(uint64_t index, int mode);
 extern int get_bitmask_block(void);
-extern int insert_sorted_list_conc(struct block *block);
-extern int invalidate_block(uint64_t index);
+extern int insert_new_data_block(uint64_t index, char * source, size_t msg_size);
+extern int invalidate_data_block(uint64_t index);
 extern void insert_free_list_conc(struct block_free *item);
 extern struct block_free * get_freelist_head(void);
 

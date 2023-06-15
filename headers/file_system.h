@@ -50,6 +50,7 @@
  * @num_block_state: Numero totale dei blocchi di stato
  * @update_list_size: Numero massimo di nuovi blocchi da caricare
  * @actual_size: Dimensione effettiva dell'array di indici liberi 'index_free'
+ * @head_sorted_list: Indice del blocco in testa alla Sorted List
  * @index_free: Sottoinsieme dei blocchi liberi al montaggio
  * @padding: Bit di Padding
  *
@@ -63,23 +64,24 @@ struct soafs_super_block {
     uint64_t num_block_state;
     uint64_t update_list_size;
     uint64_t actual_size;
+    uint64_t head_sorted_list;
     uint64_t index_free[SIZE_INIT];
-	char padding[SOAFS_BLOCK_SIZE - ((6 + SIZE_INIT) * sizeof(uint64_t))];
+	char padding[SOAFS_BLOCK_SIZE - ((7 + SIZE_INIT) * sizeof(uint64_t))];
 };
 
 
 
 /**
- * @pos: Posizione del blocco all'interno della lista ordinata
+ * @next: Indice del blocco successivo all'interno della Sorted List
  * @dim: Numero di byte validi mantenuti all'interno del blocco
  * @msg: Messaggio utente contenuto all'interno del blocco
  *
  * Rappresenta il contenuto di un singolo blocco del dispositivo.
  */
 struct soafs_block {
-    uint64_t pos;
+    uint64_t next;
     unsigned short dim;
-    char msg[SOAFS_BLOCK_SIZE - (sizeof(uint64_t) + sizeof(unsigned short))];
+    char msg[SOAFS_BLOCK_SIZE - (sizeof(long long int) + sizeof(unsigned short))];
 };
 
 
