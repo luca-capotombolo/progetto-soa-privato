@@ -143,6 +143,9 @@ int insert_new_data_block(uint64_t index, char * source, size_t msg_size)
     struct buffer_head *bh_b;
     struct soafs_sb_info *sbi;
 
+    /* Recupero le informazioni FS specific */
+    sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
+
     /* Gestione della concorrenza con le invalidazioni */
 
     /* Inizializzo il numero di tentativi */
@@ -197,12 +200,22 @@ retry_mutex_inval_insert:
         return 1;    
     }
 
+    printk("%s: Eseguita la get_block()\n", MOD_NAME);
+
     b_data_x = (struct soafs_block *)bh_x->b_data;
+
+    if(b_data_x == NULL)
+    {
+        printk("%s: Errore con NULL\n", MOD_NAME);
+        return 1;
+    }
 
     /* Inizializzo il nuovo blocco del dispositivo da inserire nella Sorted List */
 
     /* Poiché il nuovo blocco viene inserito in fondo alla lista, il suo successore deve essere sbi->num_block (NULL) */
     b_data_x->next = sbi->num_block;
+
+    printk("%s: Prima della copy_from_user()\n", MOD_NAME);
 
     /* Copio il messaggio utente nel blocco */
     bytes_ret = copy_from_user(b_data_x->msg, source, msg_size);
@@ -210,21 +223,30 @@ retry_mutex_inval_insert:
     /* Setto la dimensione del nuovo messaggio utente da inserire nel blocco */
     b_data_x->dim = msg_size - bytes_ret;
 
+    printk("%s: Eseguita la copy_from_user\n", MOD_NAME);
+
     /* Recupero il puntatore al superblocco del dispositivo contenente l'indice del blocco in testa alla Sorted List */
     bh_sb = get_sb_block();
 
     if(bh_sb == NULL)
     {
-        brelse(bh_x);
-         __sync_fetch_and_sub(&sync_var,1);
+        if(bh_x != NULL)
+            brelse(bh_x);
+         
+        __sync_fetch_and_sub(&sync_var,1);
         wake_up_interruptible(&the_queue);
         return 1;    
     }
 
     b_data_sb = (struct soafs_super_block *)bh_sb->b_data;
 
-    /* Recupero le informazioni FS specific */
-    sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
+    if(b_data_sb == NULL)
+    {
+        printk("%s: Errore NULL pt2\n", MOD_NAME);
+        return 1;
+    }
+
+    printk("%s: Il valore della testa è %lld\n", MOD_NAME, b_data_sb->head_sorted_list);
 
     /*
      * Durante l'inserimento di un nuovo blocco, non è posibile avere in esecuzione alcuna invalidazione.
@@ -239,9 +261,13 @@ retry_mutex_inval_insert:
 
         if(!ret_cmp)
             goto no_empty;
+        
+        if(bh_x != NULL)
+            brelse(bh_x);
+        
+        if(bh_sb != NULL)
+            brelse(bh_sb);
 
-        brelse(bh_x);
-        brelse(bh_sb);
          __sync_fetch_and_sub(&sync_var,1);
         wake_up_interruptible(&the_queue);
         return 0;
@@ -262,8 +288,12 @@ no_empty:
 
     if(bh_b == NULL)
     {
-        brelse(bh_x);
-        brelse(bh_sb);
+        if(bh_x != NULL)
+            brelse(bh_x);
+        
+        if(bh_sb != NULL)
+            brelse(bh_sb);
+
          __sync_fetch_and_sub(&sync_var,1);
         wake_up_interruptible(&the_queue);
         return 1;
@@ -271,15 +301,29 @@ no_empty:
 
     b_data = (struct soafs_block *)bh_b -> b_data;
 
+    if(b_data == NULL)
+    {
+        printk("%s: NULL pt3\n", MOD_NAME);
+        return 1;
+    }
+
+    printk("Fino a qua OK\n");
+
     n = 0;
 
 retry_put_data_while:
 
     if(n > 20)
     {
-        brelse(bh_x);
-        brelse(bh_sb);
-        brelse(bh_b);
+        if(bh_x != NULL)
+            brelse(bh_x);
+        
+        if(bh_sb != NULL)
+            brelse(bh_sb);
+
+        if(bh_b != NULL)
+            brelse(bh_b);
+
          __sync_fetch_and_sub(&sync_var,1);
         wake_up_interruptible(&the_queue);
         return 1;
@@ -291,14 +335,19 @@ retry_put_data_while:
     {
         next_block_index = b_data->next;
 
-        brelse(bh_b);
+        if(bh_b != NULL)
+            brelse(bh_b);
 
         bh_b = get_block(next_block_index);
 
         if(bh_b == NULL)
         {
-            brelse(bh_x);
-            brelse(bh_sb);
+            if(bh_x != NULL)
+                brelse(bh_x);
+        
+            if(bh_sb != NULL)
+                brelse(bh_sb);
+
             __sync_fetch_and_sub(&sync_var,1);
             wake_up_interruptible(&the_queue);
             return 1;
@@ -306,6 +355,8 @@ retry_put_data_while:
 
         b_data = (struct soafs_block *)bh_b -> b_data;
     }
+
+    printk("Finito il ciclo\n");
 
     /* Gestisco la concorrenza con eventuali altri inserimenti in coda nella Sorted List */
 
@@ -317,25 +368,34 @@ retry_put_data_while:
         goto retry_put_data_while;
     }
 
-    mark_buffer_dirty(bh_x);
+    if(bh_x!=NULL)
+        mark_buffer_dirty(bh_x);
 
-    mark_buffer_dirty(bh_sb);
+    if(bh_sb!=NULL)
+        mark_buffer_dirty(bh_sb);
 
-    mark_buffer_dirty(bh_b);
+    if(bh_b!=NULL)
+        mark_buffer_dirty(bh_b);
 
 #ifdef SYNC
-    sync_dirty_buffer(bh_x);
+    if(bh_x!=NULL)
+        sync_dirty_buffer(bh_x);
 
-    sync_dirty_buffer(bh_sb);
+    if(bh_sb!=NULL)
+        sync_dirty_buffer(bh_sb);
 
-    sync_dirty_buffer(bh_b);
+    if(bh_b!=NULL)
+        sync_dirty_buffer(bh_b);
 #endif
 
-    brelse(bh_x);
+    if(bh_x!=NULL)
+        brelse(bh_x);
 
-    brelse(bh_sb);
+    if(bh_sb!=NULL)
+        brelse(bh_sb);
 
-    brelse(bh_b);
+    if(bh_b!=NULL)
+        brelse(bh_b);
 
     __sync_fetch_and_sub(&sync_var,1);
 

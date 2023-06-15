@@ -177,7 +177,10 @@ int main(int argc, char *argv[])
     }
 
     /* Inserisco la dimensione effettiva dell'array */
-    sb.actual_size = actual_size;  
+    sb.actual_size = actual_size; 
+
+    /* Inizialmente la Sorted List logica è vuota */
+    sb.head_sorted_list = sb.num_block;
 
 	ret = write(fd, (char *)&sb, sizeof(sb));
 
