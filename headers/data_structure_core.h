@@ -49,5 +49,7 @@ extern int insert_new_data_block(uint64_t index, char * source, size_t msg_size)
 extern int invalidate_data_block(uint64_t index);
 extern void insert_free_list_conc(struct block_free *item);
 extern struct block_free * get_freelist_head(void);
+extern struct buffer_head *get_block(uint64_t index);
+extern struct buffer_head *get_sb_block(void);
 
 #endif //data_structure_core.h

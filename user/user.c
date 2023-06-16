@@ -34,7 +34,7 @@ void put_data(const char *msg)
 
     int ret;
 
-    ret = syscall(174, msg, strlen(msg) + 1);
+    ret = syscall(174, msg, strlen(msg));
 
     printf("Valore di ritorno della system call PUT_DATA: %d\n", ret);
 
@@ -60,8 +60,6 @@ void read_file(char *path)
     int ret;
 
     memset(msg_read, 0, NUM_BLOCK_DATA * MSG_SIZE);
-
-    //fd = open("/home/cap/Scrivania/progetto-soa/privato/progetto-soa-privato/file-system/mount/the-file", O_RDWR);
     
     fd = open(path, O_RDWR);
 

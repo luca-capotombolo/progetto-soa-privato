@@ -149,8 +149,6 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
 
     dim = b->dim;
 
-    printk("%s: [GET DATA] Dimensione del messaggio contenuto nel blocco %lld: %d\n", MOD_NAME, offset, dim);
-
     /* Determino quanti bytes devono effettivamente essere copiati per l'utente */
     if(size > dim)
         byte_copy = dim;

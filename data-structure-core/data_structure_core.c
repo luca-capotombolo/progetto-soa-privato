@@ -61,17 +61,13 @@ static void debugging_init(void)
 
 
 
-
-
-
-
 /**
  * get_block: Restituisce il puntatore superblocco del dispositivo
  *
  * @returns: Restituisce il puntatore alla struttura dati buffer_head tramite cui è possibile
  *           raggiungere il superblocco.
  */
-static struct buffer_head *get_sb_block(void)
+struct buffer_head *get_sb_block(void)
 {
     struct buffer_head *bh;
 
@@ -97,7 +93,7 @@ static struct buffer_head *get_sb_block(void)
  * @returns: Restituisce il puntatore alla struttura dati buffer_head tramite cui è possibile
  *           raggiungere il blocco richiesto.
  */
-static struct buffer_head *get_block(uint64_t index)
+struct buffer_head *get_block(uint64_t index)
 {
     struct buffer_head *bh;
     struct soafs_sb_info *sbi;
@@ -122,7 +118,8 @@ static struct buffer_head *get_block(uint64_t index)
 /**
  * scan_sorted_list - Esegue la scansione della Sorted List logica
  *
- * Questa funzione ha prevelentemente una funzione di debugging del modulo
+ * Questa funzione ha prevelentemente una funzione di debugging del modulo. Mi consente di osservare l'ordine
+ * degli elementi che sono presenti all'interno della Sorted List.
  *
  * @returns: La funzione non restituisce alcun valore.
  */
@@ -135,17 +132,18 @@ void scan_sorted_list(void)
 
     struct buffer_head *bh_sb;
     struct buffer_head *bh_b;
+
     struct soafs_sb_info *sbi;
 
     /* Recupero le informazioni FS specific */
     sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
 
-    /* Recupero il puntatore al superblocco del dispositivo contenente l'indice del blocco in testa alla Sorted List */
+    /* Recupero il puntatore al superblocco del dispositivo che contiene l'indice del blocco in testa alla Sorted List */
     bh_sb = get_sb_block();
 
     if(bh_sb == NULL)
     {
-        printk("%s: [SCANSIONE] Errore lettura del superblocco\n", MOD_NAME);
+        printk("%s: [ERRORE SCANSIONE SORTED LIST] Errore lettura del superblocco\n", MOD_NAME);
         return;
     }
 
@@ -153,12 +151,11 @@ void scan_sorted_list(void)
 
     if(b_data_sb == NULL)
     {
-        printk("%s: [SCANSIONE] Errore NULL pt2\n", MOD_NAME);
+        printk("%s: [ERRORE SCANSIONE SORTED LIST] Errore puntatore a NULL per il superblocco\n", MOD_NAME);
         return;
     }
 
-
-    /* Recupero l'indice del blocco in testa alla Sorted List che è necessariamente differente da sbi->num_block */
+    /* Recupero l'indice del blocco in testa alla Sorted List che è contenuto nel superblocco del dispositivo */
     curr_index = b_data_sb->head_sorted_list;
 
     /* Recupero il puntatore al blocco del dispositivo che rappresenta la testa della Sorted List */
@@ -166,7 +163,7 @@ void scan_sorted_list(void)
 
     if(bh_b == NULL)
     {
-        printk("%s: [SCANSIONE] Errore nel recuper del blocco in testa alla lista\n", MOD_NAME);
+        printk("%s: [ERRORE SCANSIONE SORTED LIST] Errore nel recupero del blocco in testa alla lista\n", MOD_NAME);
 
         if(bh_sb != NULL)
             brelse(bh_sb);
@@ -178,7 +175,7 @@ void scan_sorted_list(void)
 
     if(b_data == NULL)
     {
-        printk("%s: [SCANSIONE] NULL pt3\n", MOD_NAME);
+        printk("%s: [ERRORE SCANSIONE SORTED LIST] Errore puntatore a NULL per il blocco in testa alla lista\n", MOD_NAME);
         return;
     }
 
@@ -186,7 +183,7 @@ void scan_sorted_list(void)
 
     printk("%lld\n", curr_index);
 
-    /* Ricerco l'ultimo blocco all'interno della Sorted List per eseguire un inserimento in coda */
+    /* Eseguo la scansione di tutti i blocchi all'interno della Sorted List. Itero fino a quando non è l'ultimo item */
 
     while(b_data->next != sbi->num_block)
     {
@@ -201,7 +198,7 @@ void scan_sorted_list(void)
 
         if(bh_b == NULL)
         {
-            printk("%s: [SCANSIONE] Errore nella lettura del blocco all'interno del ciclo\n", MOD_NAME);
+            printk("%s: [SCANSIONE] Errore nella lettura del blocco %lld durante la scansione della Sorted List\n", MOD_NAME, curr_index);
 
             if(bh_sb != NULL)
                 brelse(bh_sb);
@@ -212,9 +209,7 @@ void scan_sorted_list(void)
         b_data = (struct soafs_block *)bh_b -> b_data;
     }
 
-    printk("%lld\n", curr_index);
-
-    printk("----------------------------------------------------------------------------------------------\n\n");
+    printk("--------------------------------------------------------------------------------------------------------------\n\n");
 
     if(bh_b != NULL)
         brelse(bh_b);
@@ -465,8 +460,6 @@ retry_put_data_while:
         b_data = (struct soafs_block *)bh_b -> b_data;
     }
 
-    printk("%s: [PUT DATA] Valore del contatore: %d\n", MOD_NAME, count);
-
     /* Gestisco la concorrenza con eventuali altri inserimenti in coda nella Sorted List */
 
     ret_cmp = __sync_bool_compare_and_swap(&(b_data->next), sbi->num_block, index);
@@ -506,7 +499,7 @@ retry_put_data_while:
     if(bh_b!=NULL)
         brelse(bh_b);
 
-    scan_sorted_list();
+    //scan_sorted_list();
 
     __sync_fetch_and_sub(&sync_var,1);
 
@@ -531,7 +524,6 @@ retry_put_data_while:
 static struct result_inval * remove_data_block(uint64_t index)
 {
     int ret;
-    int count;
 
     uint64_t prev_index;
     uint64_t curr_index;
@@ -556,7 +548,7 @@ static struct result_inval * remove_data_block(uint64_t index)
         return NULL;
     }
 
-    scan_sorted_list();
+    //scan_sorted_list();
 
     /* Prendo il riferimento al superblocco che mantiene l'indice del blocco in testa alla Sorted List */
     bh_sb = get_sb_block();
@@ -629,9 +621,6 @@ static struct result_inval * remove_data_block(uint64_t index)
     /* Recupero le informazioni FS specific */
     sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
 
-    /* Contatore per il numero di elementi all'interno della lista */
-    count = 0;
-
     /*
      * Itero finché non trovo l'elemento all'interno della Sorted List oppure finché non raggiungo la fine della lista.
      * La fine della lista è rappresentata da sbi->num_block come valore del campo 'next'.   
@@ -639,10 +628,6 @@ static struct result_inval * remove_data_block(uint64_t index)
 
     while(curr_index != sbi->num_block)
     {
-    
-        count++;
-
-        printk("%s: Valore del contatore %d\tValore dell'indice %lld\n", MOD_NAME, count, curr_index);
 
         brelse(bh_block);
     
@@ -684,8 +669,6 @@ static struct result_inval * remove_data_block(uint64_t index)
         res_inval->bh = NULL;
         return res_inval;
     }
-
-    printk("prev = %lld\tcurr = %lld\tnext = %lld\n", prev_index, curr_index, next_index);
 
     /*
      * Prendo il riferimento al blocco che precede il blocco da rimuovere dalla Sorted List. Il successore
@@ -733,6 +716,7 @@ static struct result_inval * remove_data_block(uint64_t index)
 
     return res_inval;
 }
+
 
 
 
@@ -943,6 +927,7 @@ retry_kmalloc_invalidate_block:
 
 
 
+
 /*
  * insert_free_list_conc - Inserisce un nuovo elemento in testa alla Free List
  *
@@ -972,6 +957,7 @@ retry_insert_free_list_conc:
     printk("%s: [INSERT FREE LIST] L'inserimento in testa del blocco %lld avvenuto con successo\n", MOD_NAME, item->block_index);
 #endif
 }
+
 
 
 
@@ -1014,6 +1000,7 @@ static void check_consistenza(void)
         bf = bf->next;
     }
 }
+
 
 
 
@@ -1071,6 +1058,7 @@ retry_freelist_head:
 
 
 
+
 /**
  * check_bit - Verifica la validità di un blocco di dati
  *
@@ -1124,6 +1112,7 @@ int check_bit(uint64_t index)
     
     return 0;
 }
+
 
 
 
@@ -1269,6 +1258,7 @@ retry_get_bitmask_block:
 
 
 
+
 /**
  * insert_free_list - Inserisce un nuovo elemento all'interno della lista free_block_list
  *
@@ -1311,6 +1301,7 @@ int insert_free_list(uint64_t index)
 
     return 0;
 }
+
 
 
 
@@ -1415,6 +1406,7 @@ int init_free_block_list(uint64_t *index_free, uint64_t actual_size)
 
     return 0;
 }
+
 
 
 
