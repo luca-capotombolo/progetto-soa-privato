@@ -505,8 +505,6 @@ retry_put_data_while:
 
     wake_up_interruptible(&the_queue);
 
-    printk("%s: Il blocco %lld è stato inserito con successo nella Sorted List al tentativo #%d\n", MOD_NAME, index, n);
-
     return 0;
 }
 
@@ -869,7 +867,7 @@ sleep_again:
     wait_event_interruptible_timeout(the_queue, gp->standing_sorted[index_sorted] >= grace_period_threads_sorted, msecs_to_jiffies(100));    
 
 #ifdef NOT_CRITICAL_INVAL
-    printk("%s: gp->standing_ht[index_ht] = %ld\tgrace_period_threads_ht = %ld\tgp->standing_sorted[index_sorted] = %ld\tgrace_period_threads_sorted = %ld\n", MOD_NAME, gp->standing_ht[index_ht], grace_period_threads_ht, gp->standing_sorted[index_sorted], grace_period_threads_sorted);
+    printk("%s: [INVALIDATE DATA] gp->standing_sorted[index_sorted] = %ld\tgrace_period_threads_sorted = %ld\n", MOD_NAME, gp->standing_sorted[index_sorted], grace_period_threads_sorted);
 #endif
 
     if(gp->standing_sorted[index_sorted] < grace_period_threads_sorted)

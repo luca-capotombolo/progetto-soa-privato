@@ -295,18 +295,14 @@ retry:
     
     if(item == NULL)
     {
-
-#ifdef NOT_CRITICAL_BUT_PUT
         printk("%s: [ERRORE PUT DATA] Errore nel recupero di un blocco libero\n", MOD_NAME);
-#endif
+
         wake_up_umount();
         return -ENOMEM;
     }
 
     /* Recupero l'indice del blocco libero da utilizzare per scrivere il nuovo messaggio */
     index = item -> block_index;
-
-    printk("%s: [PUT DATA] Indice del blocco libero da utilizzare - %lld\n", MOD_NAME, index);
 
     /* Calcolo la dimensione massima del messaggio che può essere memorizzato nel blocco */
 

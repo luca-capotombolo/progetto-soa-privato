@@ -11,11 +11,11 @@
 
 #define _GNU_SOURCE
 
-#define NBLOCKS 50002
+#define NBLOCKS 50000
 
 #define NTHREADS 4
 
-#define ITER 50000
+#define ITER 5000
 
 #define MSG_SIZE 4096
 
@@ -83,7 +83,7 @@ uint64_t put_data(const char *msg)
 
     uint64_t ret;
 
-    ret = syscall(174, msg, strlen(msg) + 1);
+    ret = syscall(174, msg, strlen(msg));
 
     return ret;
 }

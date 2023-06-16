@@ -11,11 +11,11 @@
 
 #define _GNU_SOURCE
 
-#define NBLOCKS 50
+#define NBLOCKS 50000
 
-#define NTHREADS 4
+#define NTHREADS 2
 
-#define ITER 500
+#define ITER 5000
 
 #define MSG_SIZE 4096
 
@@ -83,7 +83,7 @@ uint64_t put_data(const char *msg)
 
     uint64_t ret;
 
-    ret = syscall(174, msg, strlen(msg) + 1);
+    ret = syscall(174, msg, strlen(msg));
 
     return ret;
 }
@@ -126,8 +126,6 @@ void * insert_block_with_thread(void *id)
         }
 
         index = ((index * 6) + 21) % NBLOCKS;
-
-        //usleep((index % 15) * 100000);
     }
 
     printf("Il thread inseritore %ld ha terminato\n", id_thread);
@@ -173,8 +171,6 @@ void * read_block(void *id)
             __sync_fetch_and_add(&read_ok,1);
         }
 
-        //usleep((index % 15) * 100000);
-
     }
 
     printf("Il thread lettore %ld ha terminato\n", id_thread);
@@ -217,8 +213,6 @@ void * inval_block_with_thread(void *id)
         {
             __sync_fetch_and_add(&inval_ok,1);
         }
-
-        //usleep((index % 15) * 100000);
 
     }
 

@@ -386,7 +386,7 @@ sleep_again:
 
     wait_event_interruptible_timeout(the_queue, gp->standing_sorted[index_sorted] >= grace_period_threads_sorted, msecs_to_jiffies(100));
 
-    printk("p->standing_sorted[index_sorted] = %ld\tgrace_period_threads_sorted = %ld\n", gp->standing_sorted[index_sorted], grace_period_threads_sorted);
+    printk("%s: [HOUSE KEEPER] p->standing_sorted[index_sorted] = %ld\tgrace_period_threads_sorted = %ld\n", MOD_NAME, gp->standing_sorted[index_sorted], grace_period_threads_sorted);
 
 #ifdef NOT_CRITICAL_BUT_HK
     printk("%s: gp->standing_sorted[index_sorted] = %ld\tgrace_period_threads_sorted = %ld\n", MOD_NAME, gp->standing_sorted[index_sorted], grace_period_threads_sorted);
