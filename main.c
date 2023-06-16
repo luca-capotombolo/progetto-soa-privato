@@ -331,6 +331,7 @@ retry:
         return -EIO;
     }
    
+    /* Dealloco l'elemento rimosso precedentemente dalla Free List */
     kfree(item);
     
     set_bitmask(index, 1);    
@@ -408,8 +409,7 @@ asmlinkage int sys_invalidate_data(uint64_t offset){
 
 #ifdef NOT_CRITICAL_BUT_INVAL
         printk("%s: [ERRORE INVALIDATE DATA] L'invalidazione del blocco %lld non è stata eseguita con successo\n", MOD_NAME, offset);  
-#endif   
-    
+#endif       
         wake_up_umount();
 
         return -ENODATA;
@@ -422,8 +422,7 @@ asmlinkage int sys_invalidate_data(uint64_t offset){
 
     wake_up_umount();
 
-    return 0;
-	
+    return 0;	
 }
 
 

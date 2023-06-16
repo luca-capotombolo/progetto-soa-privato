@@ -61,6 +61,10 @@ static void debugging_init(void)
 
 
 
+
+
+
+
 /**
  * get_block: Restituisce il puntatore superblocco del dispositivo
  *
@@ -116,6 +120,115 @@ static struct buffer_head *get_block(uint64_t index)
 
 
 /**
+ * scan_sorted_list - Esegue la scansione della Sorted List logica
+ *
+ * Questa funzione ha prevelentemente una funzione di debugging del modulo
+ *
+ * @returns: La funzione non restituisce alcun valore.
+ */
+void scan_sorted_list(void)
+{
+    uint64_t curr_index;
+
+    struct soafs_block *b_data;
+    struct soafs_super_block *b_data_sb;
+
+    struct buffer_head *bh_sb;
+    struct buffer_head *bh_b;
+    struct soafs_sb_info *sbi;
+
+    /* Recupero le informazioni FS specific */
+    sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
+
+    /* Recupero il puntatore al superblocco del dispositivo contenente l'indice del blocco in testa alla Sorted List */
+    bh_sb = get_sb_block();
+
+    if(bh_sb == NULL)
+    {
+        printk("%s: [SCANSIONE] Errore lettura del superblocco\n", MOD_NAME);
+        return;
+    }
+
+    b_data_sb = (struct soafs_super_block *)bh_sb->b_data;
+
+    if(b_data_sb == NULL)
+    {
+        printk("%s: [SCANSIONE] Errore NULL pt2\n", MOD_NAME);
+        return;
+    }
+
+
+    /* Recupero l'indice del blocco in testa alla Sorted List che è necessariamente differente da sbi->num_block */
+    curr_index = b_data_sb->head_sorted_list;
+
+    /* Recupero il puntatore al blocco del dispositivo che rappresenta la testa della Sorted List */
+    bh_b = get_block(curr_index);
+
+    if(bh_b == NULL)
+    {
+        printk("%s: [SCANSIONE] Errore nel recuper del blocco in testa alla lista\n", MOD_NAME);
+
+        if(bh_sb != NULL)
+            brelse(bh_sb);
+
+        return;
+    }
+
+    b_data = (struct soafs_block *)bh_b -> b_data;
+
+    if(b_data == NULL)
+    {
+        printk("%s: [SCANSIONE] NULL pt3\n", MOD_NAME);
+        return;
+    }
+
+    printk("---------------------------------------- INIZIO ELEMENTI DELLA SORTED LIST --------------------------------------\n");
+
+    printk("%lld\n", curr_index);
+
+    /* Ricerco l'ultimo blocco all'interno della Sorted List per eseguire un inserimento in coda */
+
+    while(b_data->next != sbi->num_block)
+    {
+        curr_index = b_data->next;
+
+        printk("%lld\n", curr_index);
+
+        if(bh_b != NULL)
+            brelse(bh_b);
+
+        bh_b = get_block(curr_index);
+
+        if(bh_b == NULL)
+        {
+            printk("%s: [SCANSIONE] Errore nella lettura del blocco all'interno del ciclo\n", MOD_NAME);
+
+            if(bh_sb != NULL)
+                brelse(bh_sb);
+            
+            return;
+        }
+
+        b_data = (struct soafs_block *)bh_b -> b_data;
+    }
+
+    printk("%lld\n", curr_index);
+
+    printk("----------------------------------------------------------------------------------------------\n\n");
+
+    if(bh_b != NULL)
+        brelse(bh_b);
+
+    if(bh_sb != NULL)
+        brelse(bh_sb);
+
+    return;
+}
+
+
+
+
+/**
  * insert_new_data_block - Inserisce un nuovo blocco all'interno della Sorted List e lo rende valido
  *
  * @index: Indice del nuovo blocco da inserire nella Sorted List e da invalidare
@@ -130,6 +243,7 @@ static struct buffer_head *get_block(uint64_t index)
 int insert_new_data_block(uint64_t index, char * source, size_t msg_size)
 {
     int n;
+    int count;
     int ret_cmp;
     int bytes_ret;
     uint64_t next_block_index;
@@ -200,8 +314,6 @@ retry_mutex_inval_insert:
         return 1;    
     }
 
-    printk("%s: Eseguita la get_block()\n", MOD_NAME);
-
     b_data_x = (struct soafs_block *)bh_x->b_data;
 
     if(b_data_x == NULL)
@@ -215,15 +327,11 @@ retry_mutex_inval_insert:
     /* Poiché il nuovo blocco viene inserito in fondo alla lista, il suo successore deve essere sbi->num_block (NULL) */
     b_data_x->next = sbi->num_block;
 
-    printk("%s: Prima della copy_from_user()\n", MOD_NAME);
-
     /* Copio il messaggio utente nel blocco */
     bytes_ret = copy_from_user(b_data_x->msg, source, msg_size);
 
     /* Setto la dimensione del nuovo messaggio utente da inserire nel blocco */
     b_data_x->dim = msg_size - bytes_ret;
-
-    printk("%s: Eseguita la copy_from_user\n", MOD_NAME);
 
     /* Recupero il puntatore al superblocco del dispositivo contenente l'indice del blocco in testa alla Sorted List */
     bh_sb = get_sb_block();
@@ -245,8 +353,6 @@ retry_mutex_inval_insert:
         printk("%s: Errore NULL pt2\n", MOD_NAME);
         return 1;
     }
-
-    printk("%s: Il valore della testa è %lld\n", MOD_NAME, b_data_sb->head_sorted_list);
 
     /*
      * Durante l'inserimento di un nuovo blocco, non è posibile avere in esecuzione alcuna invalidazione.
@@ -307,9 +413,9 @@ no_empty:
         return 1;
     }
 
-    printk("Fino a qua OK\n");
-
     n = 0;
+
+    count = 0;
 
 retry_put_data_while:
 
@@ -333,6 +439,9 @@ retry_put_data_while:
 
     while(b_data->next != sbi->num_block)
     {
+
+        count++;
+
         next_block_index = b_data->next;
 
         if(bh_b != NULL)
@@ -356,7 +465,7 @@ retry_put_data_while:
         b_data = (struct soafs_block *)bh_b -> b_data;
     }
 
-    printk("Finito il ciclo\n");
+    printk("%s: [PUT DATA] Valore del contatore: %d\n", MOD_NAME, count);
 
     /* Gestisco la concorrenza con eventuali altri inserimenti in coda nella Sorted List */
 
@@ -397,6 +506,8 @@ retry_put_data_while:
     if(bh_b!=NULL)
         brelse(bh_b);
 
+    scan_sorted_list();
+
     __sync_fetch_and_sub(&sync_var,1);
 
     wake_up_interruptible(&the_queue);
@@ -415,11 +526,12 @@ retry_put_data_while:
  * @index: Indice del blocco da eliminare dalla Sorted List
  *
  * @returns: Restituisce il puntatore ad una struttura dati che contiene il codice numerico
- *           che descrive l'esito della funzione e il puntatore alla struttura dati buffer_head.
+ *           che descrive l'esito della funzione e il puntatore ad una struttura dati buffer_head.
  */
 static struct result_inval * remove_data_block(uint64_t index)
 {
     int ret;
+    int count;
 
     uint64_t prev_index;
     uint64_t curr_index;
@@ -435,6 +547,7 @@ static struct result_inval * remove_data_block(uint64_t index)
     struct result_inval *res_inval;
     struct soafs_sb_info *sbi;
 
+    /* Alloco memoria per la struttura dati da restituire */
     res_inval = (struct result_inval *)kzalloc(sizeof(struct result_inval), GFP_KERNEL);
 
     if(res_inval == NULL)
@@ -443,6 +556,8 @@ static struct result_inval * remove_data_block(uint64_t index)
         return NULL;
     }
 
+    scan_sorted_list();
+
     /* Prendo il riferimento al superblocco che mantiene l'indice del blocco in testa alla Sorted List */
     bh_sb = get_sb_block();
 
@@ -450,6 +565,7 @@ static struct result_inval * remove_data_block(uint64_t index)
     {
         printk("%s: [ERRORE INVALIDATE DATA] Errore nella lettura del superblocco\n", MOD_NAME);
         res_inval->code = 2;
+        res_inval->bh = NULL;
         return res_inval;
     }
 
@@ -464,6 +580,7 @@ static struct result_inval * remove_data_block(uint64_t index)
         brelse(bh_sb);
         printk("%s: [ERRORE INVALIDATE DATA] Errore nella lettura del blocco in testa alla Sorted List\n", MOD_NAME);
         res_inval->code = 2;
+        res_inval->bh = NULL;
         return res_inval;
     }
 
@@ -477,7 +594,7 @@ static struct result_inval * remove_data_block(uint64_t index)
 
     if(b_data_sb->head_sorted_list == index)
     {
-        /* Esegup una rimozione in testa */
+        /* Eseguo una rimozione in testa */
 
         ret = __sync_bool_compare_and_swap(&(b_data_sb->head_sorted_list), index, b_data_block->next);
 
@@ -486,6 +603,7 @@ static struct result_inval * remove_data_block(uint64_t index)
             brelse(bh_sb);
             brelse(bh_block);
             res_inval->code = 3;
+            res_inval->bh = NULL;
             return res_inval;
         }
 
@@ -500,23 +618,42 @@ static struct result_inval * remove_data_block(uint64_t index)
         return res_inval;
     }
 
-    /* L'elemento da invalidare non si trova in testa alla Sorted List e, quindi, lo devo ricercare */
+    /* L'elemento da invalidare non si trova in testa alla Sorted List e, quindi, lo devo ricercare all'interno della lista */
+    
+    /* Sicuramente il predecessore sarà almeno la testa della lista */ 
     prev_index = b_data_sb->head_sorted_list;
+
+    /* Inizio ad iterare partendo dal secondo elemento all'interno della Sorted List */
     curr_index = b_data_block->next;
 
     /* Recupero le informazioni FS specific */
     sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
 
+    /* Contatore per il numero di elementi all'interno della lista */
+    count = 0;
+
+    /*
+     * Itero finché non trovo l'elemento all'interno della Sorted List oppure finché non raggiungo la fine della lista.
+     * La fine della lista è rappresentata da sbi->num_block come valore del campo 'next'.   
+     */
+
     while(curr_index != sbi->num_block)
     {
+    
+        count++;
+
+        printk("%s: Valore del contatore %d\tValore dell'indice %lld\n", MOD_NAME, count, curr_index);
+
         brelse(bh_block);
     
+        /* Prendo il riferimento al blocco del dispositivo su cui correntemente sto iterando */
         bh_block = get_block(curr_index);
 
         if(bh_block == NULL)
         {
             brelse(bh_sb);
             res_inval->code = 2;
+            res_inval->bh = NULL;
             return res_inval;
         }
     
@@ -524,6 +661,7 @@ static struct result_inval * remove_data_block(uint64_t index)
 
         if(curr_index == index)
         {
+            /* Recupero l'indice del blocco successivo al blocco che devo invalidare all'interno della Sorted List */
             next_index = b_data_block->next;
             break;
         }
@@ -533,41 +671,53 @@ static struct result_inval * remove_data_block(uint64_t index)
         curr_index = b_data_block->next;
     }
     
-    /* Verifico se il blocco richiesto è stato trovato */
+    /*
+     * Verifico se il blocco richiesto non è stato trovato e, quindi, sono arrivato alla fine della Sorted List.
+     * Il blocco da invalidare deve essere necessariamente presente all'interno della Sorted List.    
+     */
     if(curr_index == sbi->num_block)
     {
+        printk("%s: Errore la lista è stata attraversata totalmente\n", MOD_NAME);
         brelse(bh_sb);
         brelse(bh_block);
         res_inval->code = 3;
+        res_inval->bh = NULL;
         return res_inval;
     }
 
+    printk("prev = %lld\tcurr = %lld\tnext = %lld\n", prev_index, curr_index, next_index);
+
     /*
      * Prendo il riferimento al blocco che precede il blocco da rimuovere dalla Sorted List. Il successore
-     * del predecessore del blocco da rimuovere diventa il successore del blocco da rimuovere.
+     * del predecessore del blocco da rimuovere diventa il successore del blocco da rimuovere. L'indice del
+     * blocco successore è mantenuto all'interno della variabile 'next_index'
      */
     bh_block_prev = get_block(prev_index);
 
     if(bh_block_prev == NULL)
     {
-        printk("%s: [ERRORE INVALIDATE DATA] Errore nella lettura del blocco con indice %lld\n", MOD_NAME, prev_index);
+        printk("%s: [ERRORE INVALIDATE DATA] Errore nella lettura del blocco predecessore con indice %lld\n", MOD_NAME, prev_index);
         brelse(bh_sb);
         brelse(bh_block);
         res_inval->code = 2;
+        res_inval->bh = NULL;
         return res_inval;
     }
     
-    b_data_block_prev = (struct soafs_block *)bh_block->b_data;
+    b_data_block_prev = (struct soafs_block *)bh_block_prev->b_data;
     
-    /* Eseguo la rimozione dell'elemento all'interno della Sorted List */
+    /* Eseguo la rimozione dell'elemento all'interno della Sorted List scollegandolo dalla lista ordinata */
     ret = __sync_bool_compare_and_swap(&(b_data_block_prev->next), index, next_index);
 
     if(!ret)
     {
+        printk("%s: Errore nella compare and swap per la modifica del predecessore\n", MOD_NAME);
+        printk("%s: Indice richiesto da invalidare %lld\tIndice successore del predecessore %lld\n", MOD_NAME, index, b_data_block_prev->next);
         brelse(bh_sb);
         brelse(bh_block);
         brelse(bh_block_prev);
         res_inval->code = 3;
+        res_inval->bh = NULL;
         return res_inval;
      }
 
@@ -588,6 +738,8 @@ static struct result_inval * remove_data_block(uint64_t index)
 
 /**
  * invalidate_data_block - Invalida un blocco valido contenente un messaggio utente
+ *
+ * @index: Indice del blocco da invalidare
  *
  * Durante un'invalidazione non è possibile che la stato della Sorted List venga modificato.
  * Infatti, durante un''invalidazione non è possibile avere un'ulteriore invalidazione oppure
@@ -705,7 +857,7 @@ retry_invalidate:
     res_inval = remove_data_block(index);
 
     //TODO: Vedi se la gestione dell'errore è corretta
-    if(res_inval->code)
+    if( (res_inval == NULL) || res_inval->code )
     {
         __atomic_exchange_n (&(sync_var), 0X0000000000000000, __ATOMIC_SEQ_CST);
         mutex_unlock(&invalidate_mutex);
@@ -747,7 +899,7 @@ sleep_again:
     /* Recupero le informazioni FS specific */
     sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
 
-    /* Terminato il Grace Period posso aggiornare il puntatore del blocco in modo sicuro */
+    // TODO: Terminato il Grace Period posso aggiornare il puntatore del blocco in modo sicuro
     ((struct soafs_block *)res_inval->bh->b_data)->next = sbi->num_block;
     asm volatile ("mfence");
 
@@ -787,7 +939,6 @@ retry_kmalloc_invalidate_block:
     wake_up_interruptible(&the_queue);    
 
     return res_inval->code;
-    //return 0;
 }
 
 
