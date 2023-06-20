@@ -23,6 +23,8 @@ MODULE_DESCRIPTION(DESCRIPTION);
  * relative ai blocchi liberi all'interno della lista.
  */
 static DEFINE_MUTEX(free_list_mutex);
+
+
 unsigned long the_syscall_table = 0x0;
 module_param(the_syscall_table, ulong, 0660);
 unsigned long the_ni_syscall;
@@ -438,8 +440,8 @@ static int soafs_init(void)
 
 	AUDIT
     {
-        printk("%s: [MONTAGGIO MODULO] received sys_call_table address %px\n",MOD_NAME,(void*)the_syscall_table);
-     	printk("%s: [MONTAGGIO MODULO] initializing - hacked entries %d\n",MOD_NAME,HACKED_ENTRIES);
+        printk("%s: [MONTAGGIO MODULO] Indirizzo della system call table ricevuto %px\n",MOD_NAME,(void*)the_syscall_table);
+     	printk("%s: [MONTAGGIO MODULO] Inizializzazione - entry da hackerare %d\n",MOD_NAME,HACKED_ENTRIES);
 	}
 
 	new_sys_call_array[0] = (unsigned long)sys_get_data;
@@ -450,7 +452,7 @@ static int soafs_init(void)
 
     if (ret != HACKED_ENTRIES)
     {
-        printk("%s: [ERRORE MONTAGGIO MODULO] could not hack %d entries (just %d)\n",MOD_NAME,HACKED_ENTRIES,ret); 
+        printk("%s: [ERRORE MONTAGGIO MODULO] Non posso hackerare %d entry (solamente %d)\n",MOD_NAME,HACKED_ENTRIES,ret); 
         return -1;      
     }
 
@@ -463,7 +465,7 @@ static int soafs_init(void)
 
 	protect_memory();
 
-    printk("%s: [MONTAGGIO MODULO] all new system-calls correctly installed on sys-call table\n",MOD_NAME);
+    printk("%s: [MONTAGGIO MODULO] Tutte le nuove system calls sono state correttamente installate sulla sys-call table\n",MOD_NAME);
 
     ret = register_filesystem(&soafs_fs_type);
 
@@ -497,7 +499,7 @@ static void soafs_exit(void)
 
 	protect_memory();
 
-    printk("%s: [SMONTAGGIO MODULO] sys-call table restored to its original content\n",MOD_NAME);
+    printk("%s: [SMONTAGGIO MODULO] La sys-call table è stata ripristinata al suo contenuto originale\n",MOD_NAME);
 
     ret = unregister_filesystem(&soafs_fs_type);
 

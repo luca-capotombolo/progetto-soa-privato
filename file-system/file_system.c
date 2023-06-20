@@ -412,9 +412,10 @@ sleep_again:
 
 
 /*
- * Questa funzione ha il compito di creare il thread demone che
- * si occuperà di resettare il valore del contatore in modo da
- * evitare l'overflow.
+ * new_thread_daemon - Creazione del thread demone del modulo
+ * 
+ * Questa funzione ha il compito di creare il thread demone che si occuperà di resettare
+ * il valore del contatore in modo da evitare l'overflow.
  */
 int new_thread_daemon(void)
 {
@@ -423,10 +424,9 @@ int new_thread_daemon(void)
 
     kt = kthread_create(house_keeper, NULL, "house_keeper");
 
-	if (IS_ERR(kt)) {
-
+	if (IS_ERR(kt))
+    {
 		printk("%s: [ERRORE DEMONE] Errore creazione kernel thread\n", MOD_NAME);
-
         return 1;
 	}
 
@@ -480,7 +480,7 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
      */
     if( (sb_disk->num_block > NBLOCKS) || ((sb_disk->num_block - sb_disk->num_block_state - 2) <= 0) )
     {
-        printk("%s: [ERRORE MONTAGGIO] Il numero dei blocchi del dispositivo non è valido.\n", MOD_NAME);
+        printk("%s: [ERRORE MONTAGGIO] Il numero dei blocchi del dispositivo non è valido\n", MOD_NAME);
         brelse(bh);
         is_free = 1;
         return -EINVAL;
@@ -515,7 +515,7 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     sbi->num_block = sb_disk->num_block;                // Numero totale dei blocchi del dispositivo
     sbi->num_block_free = sb_disk->num_block_free;      // Numero totale dei blocchi liberi all'istante di montaggio
     sbi->num_block_state = sb_disk->num_block_state;    // Numero totale dei blocchi di stato
-    sbi->update_list_size = sb_disk->update_list_size;  // Numero massimo di blocchi da ricaricare nella lista
+    sbi->update_list_size = sb_disk->update_list_size;  // Numero massimo di blocchi da ricaricare nella lista Free List
 
     sb->s_fs_info = sbi;
 
@@ -602,6 +602,7 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
         brelse(bh);
         free_all_memory();
         kfree(sbi);
+         __sync_fetch_and_sub(&kernel_thread_ok,1);
         is_free = 1;
         return -EIO;        
     }
@@ -632,6 +633,8 @@ static void soafs_kill_sb(struct super_block *sb)
 
     if(!ret)
         goto exit_umount_soafs;
+
+    /* Il thread inizia effettivamente lo smontaggio */
 
     __sync_fetch_and_add(&stop, 1);
 
@@ -694,9 +697,6 @@ exit_kill_sb:
 
     is_free = 0;
 
-    if(sync_var)
-        printk("%s: Errore nel valore della variabile sync_var\n", MOD_NAME);
-
     sync_var = 0;
 
     printk("%s: [SMONTAGGIO] Il File System 'soafs' è stato smontato con successo.\n", MOD_NAME);
@@ -723,7 +723,7 @@ static struct dentry *soafs_mount(struct file_system_type *fs_type, int flags, c
 
     if(!ret_cmp)
     {
-        printk("%s: [ERRORE MONTAGGIO] Il FS '%s' è stato già montato oppure il montaggio è in corso di esecuzione\n", MOD_NAME, fs_type->name);
+        printk("%s: [ERRORE MONTAGGIO] Il FS '%s' è stato già montato oppure il suo montaggio è in corso di esecuzione\n", MOD_NAME, fs_type->name);
         return ERR_PTR(-EINVAL);
     }
     
