@@ -105,7 +105,7 @@ void * insert_block_with_thread(void *id)
 
     __sync_fetch_and_add(&count,1);
 
-    while(count!=4*NTHREADS);
+    while(count!=3*NTHREADS);
 
     printf("[INSERT] Il thread %ld inizia le sue esecuzioni....\n", id_thread);
 
@@ -147,7 +147,7 @@ void * read_block(void *id)
 
     __sync_fetch_and_add(&count,1);
 
-    while(count!=4*NTHREADS);
+    while(count!=3*NTHREADS);
 
     printf("[READ] Il thread %ld inizia le sue esecuzioni....\n", id_thread);
 
@@ -246,7 +246,7 @@ void * inval_block_with_thread(void *id)
 
     __sync_fetch_and_add(&count,1);
 
-    while(count!=4*NTHREADS);
+    while(count!=3*NTHREADS);
 
     printf("[INVAL] Il thread %ld inizia le sue esecuzioni....\n", id_thread);
 
@@ -318,14 +318,14 @@ int main(void)
     printf("Lettori creati con successo\n");
 
     /* Creazione dei thread per le letture da file */
-
+/*
     for(i=0;i<NTHREADS; i++)
     {
         pthread_create(&tid_file[i],NULL,read_the_file,(void *)(i));
     }
 
     printf("Lettori the file creati con successo\n");
-
+*/
     /* Attendo la terminazione dei thread per gli inserimenti */
 
 
@@ -351,12 +351,12 @@ int main(void)
     {
         pthread_join(tid_inval[i], NULL);
     }
-
+/*
     for(i=0;i<NTHREADS; i++)
     {
         pthread_join(tid_file[i], NULL);
     }
-
+*/
     printf("invalidazioni completate\n");
 
     printf("Esecuzione completata.\n");
@@ -372,11 +372,11 @@ int main(void)
     printf("Errori letture: %d\n", read_err);
 
     printf("Corrette letture: %d\n", read_ok);
-
+/*
     printf("Errori letture the file: %d\n", read_file_err);
 
     printf("Corrette letture the file: %d\n", read_file_ok);
-
+*/
     return 0;
 
 }
