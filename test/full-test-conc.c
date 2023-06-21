@@ -34,6 +34,8 @@ int insert_err = 0;
 int inval_ok = 0;
 int insert_ok = 0;
 int read_ok = 0;
+int read_file_err = 0;
+int read_file_ok = 0;
 
 
 
@@ -103,7 +105,7 @@ void * insert_block_with_thread(void *id)
 
     __sync_fetch_and_add(&count,1);
 
-    while(count!=3*NTHREADS);
+    while(count!=4*NTHREADS);
 
     printf("[INSERT] Il thread %ld inizia le sue esecuzioni....\n", id_thread);
 
@@ -145,7 +147,7 @@ void * read_block(void *id)
 
     __sync_fetch_and_add(&count,1);
 
-    while(count!=3*NTHREADS);
+    while(count!=4*NTHREADS);
 
     printf("[READ] Il thread %ld inizia le sue esecuzioni....\n", id_thread);
 
@@ -180,6 +182,61 @@ void * read_block(void *id)
 
 
 
+void *read_the_file(void *id)
+{
+    uint64_t id_thread = (uint64_t)id;
+    uint64_t index = id_thread;
+    int ret;
+    char msg_read[10000];
+    int fd;
+
+    __sync_fetch_and_add(&count,1);
+
+    while(count!=4*NTHREADS);
+
+    printf("[THE-FILE] Il thread %ld inizia le sue esecuzioni....\n", id_thread);
+
+    for(int i = 0; i < ITER; i++)
+    {
+
+        if(i%10==0)
+        {
+            printf("Il thread THE-FILE %ld si trova a %d\n", id_thread, i);    
+        }
+
+        memset(msg_read, 0, 10000);
+
+        fd = open("/home/cap/Scrivania/progetto-soa/privato/progetto-soa-privato/file-system/mount/the-file", O_RDWR);
+
+        if(fd == -1)
+        {
+            __sync_fetch_and_add(&read_file_err,1);
+            close(fd);
+            continue;
+        }
+
+        ret = read(fd, (void *)msg_read, 10000);
+
+        if(ret==-1)
+        {
+            __sync_fetch_and_add(&read_file_err,1);
+            close(fd);
+            continue;
+        }
+
+        __sync_fetch_and_add(&read_file_ok,1);
+
+        close(fd);        
+        
+    }
+
+    printf("Il thread THE-FILE %ld ha terminato\n", id_thread);
+
+    fflush(stdout);
+}
+
+
+
 
 void * inval_block_with_thread(void *id)
 {
@@ -189,7 +246,7 @@ void * inval_block_with_thread(void *id)
 
     __sync_fetch_and_add(&count,1);
 
-    while(count!=3*NTHREADS);
+    while(count!=4*NTHREADS);
 
     printf("[INVAL] Il thread %ld inizia le sue esecuzioni....\n", id_thread);
 
@@ -230,6 +287,7 @@ int main(void)
     pthread_t tid_insert[NTHREADS];
     pthread_t tid_inval[NTHREADS];
     pthread_t tid_read[NTHREADS];
+    pthread_t tid_file[NTHREADS];
 
 
     /* Creazione dei thread per gli inserimenti */
@@ -259,6 +317,15 @@ int main(void)
 
     printf("Lettori creati con successo\n");
 
+    /* Creazione dei thread per le letture da file */
+
+    for(i=0;i<NTHREADS; i++)
+    {
+        pthread_create(&tid_file[i],NULL,read_the_file,(void *)(i));
+    }
+
+    printf("Lettori the file creati con successo\n");
+
     /* Attendo la terminazione dei thread per gli inserimenti */
 
 
@@ -285,6 +352,11 @@ int main(void)
         pthread_join(tid_inval[i], NULL);
     }
 
+    for(i=0;i<NTHREADS; i++)
+    {
+        pthread_join(tid_file[i], NULL);
+    }
+
     printf("invalidazioni completate\n");
 
     printf("Esecuzione completata.\n");
@@ -300,6 +372,10 @@ int main(void)
     printf("Errori letture: %d\n", read_err);
 
     printf("Corrette letture: %d\n", read_ok);
+
+    printf("Errori letture the file: %d\n", read_file_err);
+
+    printf("Corrette letture the file: %d\n", read_file_ok);
 
     return 0;
 

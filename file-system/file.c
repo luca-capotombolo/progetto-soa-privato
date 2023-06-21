@@ -249,381 +249,65 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
     wake_up_umount();
 
     return bytes_copied - ret;
-    
-
-/*
-    if(*off)
-    {
-        wake_up_umount();
-        return 0;
-    }
-
-    sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
-
-    my_epoch = __sync_fetch_and_add(&(gp->epoch_sorted),1);
-
-    curr = head_sorted_list;
-
-    if(curr == NULL)
-    {
-        printk("%s: [READ DRIVER] Attualmente non ci sono messaggi da consegnare\n", MOD_NAME);
-
-        index = (my_epoch & MASK) ? 1 : 0;
-
-        __sync_fetch_and_add(&(gp->standing_sorted[index]),1);
-
-        wake_up_interruptible(&the_queue);
-
-        wake_up_umount();
-
-        return 0;
-    }
-
-    bytes_copied = 0;
-
-    msg_to_copy = (char *)kzalloc(len, GFP_KERNEL);
-
-    if(msg_to_copy == NULL)
-    {
-        printk("%s: [ERRORE READ DRIVER] Errore esecuzione kzalloc() durante l'esecuzione della read()\n", MOD_NAME);
-
-        index = (my_epoch & MASK) ? 1 : 0;
-
-        __sync_fetch_and_add(&(gp->standing_sorted[index]),1);
-
-        wake_up_interruptible(&the_queue);
-
-        wake_up_umount();
-
-        return -EIO;
-    }
-
-    while(curr != NULL)
-    {
-
-        if(bytes_copied > len)
-        {
-            printk("%s: [ERRORE READ DRIVER] Quantità di byte copiati non valida\n", MOD_NAME);
-
-            index = (my_epoch & MASK) ? 1 : 0;
-
-            __sync_fetch_and_add(&(gp->standing_sorted[index]),1);
-
-            wake_up_interruptible(&the_queue);
-
-            kfree(msg_to_copy);
-
-            wake_up_umount();
-
-            return -EIO;
-        }  
-
-        if(bytes_copied == len)
-        {
-
-            printk("%s: [READ DRIVER] Il contenuto del device richiesto è stato letto con successo\n", MOD_NAME);
-            break;
-        }
-
-        bh = sb_bread(sb_global, 2 + sbi->num_block_state + curr->block_index);
-
-        if(bh == NULL)
-        {
-            //TODO: Controlla se va bene
-            printk("%s: [ERRORE READ DRIVER] Quantità di byte copiati non valida\n", MOD_NAME);
-
-            index = (my_epoch & MASK) ? 1 : 0;
-
-            __sync_fetch_and_add(&(gp->standing_sorted[index]),1);
-
-            wake_up_interruptible(&the_queue);
-
-            kfree(msg_to_copy);
-
-            wake_up_umount();
-
-            return -EIO;
-        }
-
-        b = (struct soafs_block *)bh->b_data;
-    
-        len_msg = strlen(b->msg);
-
-        if( (bytes_copied + len_msg + 1) >= len)
-        {
-            byte_to_copy_iter = len - bytes_copied - 1;                            
-
-            if(byte_to_copy_iter > 0)
-            {
-                // strncpy(msg_to_copy + bytes_copied, curr->msg, byte_to_copy_iter);
-
-                memcpy(msg_to_copy + bytes_copied, b->msg, byte_to_copy_iter);
-            }
-
-            bytes_copied += byte_to_copy_iter + 1;
-
-            msg_to_copy[bytes_copied - 1] = '\0';
-
-            break;
-        }
-        else
-        {
-            byte_to_copy_iter = len_msg;
-
-            if(len_msg == 0)
-            {
-                printk("%s: [READ DRIVER] Messaggio vuoto\n", MOD_NAME);
-                curr = curr->sorted_list_next;
-                continue;
-            }
-
-            //strncpy(msg_to_copy + bytes_copied, curr->msg, byte_to_copy_iter);
-
-            memcpy(msg_to_copy + bytes_copied, b->msg, byte_to_copy_iter);
-
-            bytes_copied += byte_to_copy_iter + 1;
-
-            msg_to_copy[bytes_copied - 1] = '\n';      
-        }
-
-        curr = curr->sorted_list_next;
-    }
-
-    if(bytes_copied > 0)
-    {
-        msg_to_copy[bytes_copied - 1] = '\0';
-    }
-
-    index = (my_epoch & MASK) ? 1 : 0;
-
-    __sync_fetch_and_add(&(gp->standing_sorted[index]),1);
-
-    wake_up_interruptible(&the_queue);
-
-    if(bytes_copied > 0)
-    {
-        ret = copy_to_user(buf, msg_to_copy, bytes_copied);
-    }
-    else
-    {
-        printk("%s: [ERRORE READ DRIVER] Il numero di byte copiati dal device è pari a 0\n", MOD_NAME);
-        ret = 0;
-    }
-
-    *off = 1;
-
-    wake_up_umount();
-
-    return bytes_copied - ret;
-*/
-/*
-    int index;
-    size_t bytes_copied;                
-    size_t byte_to_copy_iter;           
-    size_t len_msg;                    
-    char *msg_to_copy;                  
-    unsigned long ret;
-    unsigned long my_epoch;
-    struct block *curr;
-    
-    printk("%s: [READ DRIVER] E' stata invocata la funzione di lettura con la dimensione richiesta pari a %ld.", MOD_NAME, len);
-
-
-    __sync_fetch_and_add(&(num_threads_run),1);
-
-    if(!is_mounted)
-    {
-        wake_up_umount();
-
-        LOG_DEV_ERR("GET_DATA", "get_data");
-
-        return -ENODEV;
-    }
-
-
-    if(*off)
-    {
-        wake_up_umount();
-
-        return 0;
-    }
-
-    my_epoch = __sync_fetch_and_add(&(gp->epoch_sorted),1);
-
-    curr = head_sorted_list;
-
-    if(curr == NULL)
-    {
-        printk("%s: [READ DRIVER] Attualmente non ci sono messaggi da consegnare\n", MOD_NAME);
-
-        index = (my_epoch & MASK) ? 1 : 0;
-
-        __sync_fetch_and_add(&(gp->standing_sorted[index]),1);
-
-        wake_up_interruptible(&the_queue);
-
-        wake_up_umount();
-
-        return 0;
-    }
-
-    bytes_copied = 0;
-
-    msg_to_copy = (char *)kzalloc(len, GFP_KERNEL);
-
-    if(msg_to_copy == NULL)
-    {
-        printk("%s: [ERRORE READ DRIVER] Errore esecuzione kzalloc() durante l'esecuzione della read()\n", MOD_NAME);
-
-        index = (my_epoch & MASK) ? 1 : 0;
-
-        __sync_fetch_and_add(&(gp->standing_sorted[index]),1);
-
-        wake_up_interruptible(&the_queue);
-
-        wake_up_umount();
-
-        return -EIO;
-    }
-
-    while(curr != NULL)
-    {
-
-        if(bytes_copied > len)
-        {
-            printk("%s: [ERRORE READ DRIVER] Quantità di byte copiati non valida\n", MOD_NAME);
-
-            index = (my_epoch & MASK) ? 1 : 0;
-
-            __sync_fetch_and_add(&(gp->standing_sorted[index]),1);
-
-            wake_up_interruptible(&the_queue);
-
-            kfree(msg_to_copy);
-
-            wake_up_umount();
-
-            return -EIO;
-        }  
-
-        if(bytes_copied == len)
-        {
-
-            printk("%s: [READ DRIVER] Il contenuto del device richiesto è stato letto con successo\n", MOD_NAME);
-            break;
-        }
-    
-        len_msg = strlen(curr->msg);
-
-        if( (bytes_copied + len_msg + 1) >= len)
-        {
-            byte_to_copy_iter = len - bytes_copied - 1;                            
-
-            if(byte_to_copy_iter > 0)
-            {
-                strncpy(msg_to_copy + bytes_copied, curr->msg, byte_to_copy_iter);
-            }
-
-            bytes_copied += byte_to_copy_iter + 1;
-
-            msg_to_copy[bytes_copied - 1] = '\0';
-
-            break;
-        }
-        else
-        {
-            byte_to_copy_iter = len_msg;
-
-            if(len_msg == 0)
-            {
-                printk("%s: [READ DRIVER] Messaggio vuoto\n", MOD_NAME);
-                curr = curr->sorted_list_next;
-                continue;
-            }
-
-            strncpy(msg_to_copy + bytes_copied, curr->msg, byte_to_copy_iter);
-
-            bytes_copied += byte_to_copy_iter + 1;
-
-            msg_to_copy[bytes_copied - 1] = '\n';      
-        }
-
-        curr = curr->sorted_list_next;
-    }
-
-    if(bytes_copied > 0)
-    {
-        msg_to_copy[bytes_copied - 1] = '\0';
-    }
-
-    index = (my_epoch & MASK) ? 1 : 0;
-
-    __sync_fetch_and_add(&(gp->standing_sorted[index]),1);
-
-    wake_up_interruptible(&the_queue);
-
-    if(bytes_copied > 0)
-    {
-        ret = copy_to_user(buf, msg_to_copy, bytes_copied);
-    }
-    else
-    {
-        printk("%s: [ERRORE READ DRIVER] Il numero di byte copiati dal device è pari a 0\n", MOD_NAME);
-        ret = 0;
-    }
-
-    *off = 1;
-
-    wake_up_umount();
-
-    return bytes_copied - ret;
-*/
-    return 0;
-
 }
+
 
 
 
 int onefilefs_open(struct inode *inode, struct file *file) {
 
-    /* Avviso l'inizio dell'esecuzione per il thread */
-    __sync_fetch_and_add(&(num_threads_run),1);
-
     if(!is_mounted)
     {
-        wake_up_umount();
-
         LOG_DEV_ERR("GET_DATA", "get_data");
+        return -ENODEV;
+    }
+    
+    /* Comunica la sua presenza ad un eventuale thread che deve eseguire lo smontaggio */
+    __sync_fetch_and_add(&(num_threads_run),1);
 
+    /* Verifico se può effettivamente eseguire le proprie attività */
+    if(stop)
+    {
+        wake_up_umount();
+        LOG_DEV_ERR("GET_DATA", "get_data");
         return -ENODEV;
     }
 
     printk("%s: Il dispositivo è stato aperto\n", MOD_NAME);
 
-    wake_up_umount();
+    //wake_up_umount();
 
     return 0;
 }
 
 
 
-int onefilefs_release(struct inode *inode, struct file *file) {
 
-    /* Avviso l'inizio dell'esecuzione per il thread */
-    __sync_fetch_and_add(&(num_threads_run),1);
+int onefilefs_release(struct inode *inode, struct file *file) {
 
     if(!is_mounted)
     {
-        wake_up_umount();
-
         LOG_DEV_ERR("GET_DATA", "get_data");
-
         return -ENODEV;
     }
+    
+    /* Comunica la sua presenza ad un eventuale thread che deve eseguire lo smontaggio */
+    __sync_fetch_and_add(&(num_threads_run),1);
 
+    /* Verifico se può effettivamente eseguire le proprie attività */
+    if(stop)
+    {
+        wake_up_umount();
+        LOG_DEV_ERR("GET_DATA", "get_data");
+        return -ENODEV;
+    }
     printk("%s: Il dispositivo è stato chiuso\n", MOD_NAME);
 
-    wake_up_umount();
+    //wake_up_umount();
+
+    __sync_fetch_and_sub(&(num_threads_run),2);
+
+    wake_up_interruptible(&umount_queue);
 
    	return 0;
 }

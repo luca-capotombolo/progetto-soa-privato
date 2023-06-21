@@ -33,13 +33,13 @@ int restore[HACKED_ENTRIES] = {[0 ... (HACKED_ENTRIES-1)] -1};
 
 
 
-/*
+/**
  * check_offset - Controlla il valore dell'offset del blocco di dati
  *
  * @offset: Offset del blocco di dati
- * @sbi: Struttura dati contenente le informazioni FS Specif
+ * @sbi: Struttura dati contenente le informazioni FS Specific
  *
- * Restituisce il valore 0 in caso di offset corretto; altrimenti, restituisce 1.
+ * @returns: Restituisce il valore 0 in caso di offset corretto; altrimenti, restituisce 1.
  */
 int check_offset(int offset, struct soafs_sb_info *sbi)
 {
@@ -59,12 +59,12 @@ int check_offset(int offset, struct soafs_sb_info *sbi)
 
 
 
-/*
+/**
  * check_size - Controlla il valore della size
  *
  * @size: La dimensione del messaggio
  *
- * Restituisce il valore 0 in caso di size corretta; altrimenti, restituisce 1.
+ * @returns: Restituisce il valore 0 in caso di size corretta; altrimenti, restituisce 1.
  */
 int check_size(size_t size)
 {
@@ -79,14 +79,17 @@ int check_size(size_t size)
 
 
 
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
 __SYSCALL_DEFINEx(3, _get_data, uint64_t, offset, char *, destination, size_t, size){
 #else
 asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
 #endif
+    int index;
     size_t byte_ret;
     size_t byte_copy; 
     unsigned short dim;
+    unsigned long my_epoch;
     struct buffer_head *bh;
     struct soafs_sb_info *sbi;
     struct soafs_block *b;
@@ -121,10 +124,12 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
         LOG_DEV_ERR("GET_DATA", "get_data");
         return -ENODEV;
     }
+
+    my_epoch = __sync_fetch_and_add(&(gp->epoch_sorted),1);
    
     /*
-     * Verifico se il blocco da leggere che è stato richiesto dall'utente è valido oppure libero.
-     * Se è libero, allora la system call termina con un errore.
+     * Verifico se il blocco da leggere che è stato richiesto dall'utente è valido oppure è libero.
+     * Se il blocco è libero, allora la system call termina immediatamente con un errore.
      */
     if(!check_bit(offset))
     {
@@ -132,6 +137,10 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
 #ifdef NOT_CRITICAL_BUT_GET
         printk("%s: [ERRORE GET DATA] E' stata richiesta la lettura del blocco %lld ma il blocco è libero\n", MOD_NAME, offset);
 #endif
+
+        index = (my_epoch & MASK) ? 1 : 0;
+        __sync_fetch_and_add(&(gp->standing_sorted[index]),1);
+        wake_up_interruptible(&the_queue);
         wake_up_umount();
         return -ENODATA;
     }
@@ -143,11 +152,25 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
     if(bh == NULL)
     {
         printk("%s: [ERRORE GET DATA] Errore nella lettura del blocco %lld dal dispositivo\n", MOD_NAME, offset);
+        index = (my_epoch & MASK) ? 1 : 0;
+        __sync_fetch_and_add(&(gp->standing_sorted[index]),1);
+        wake_up_interruptible(&the_queue);
         wake_up_umount();
         return -EIO;
     }
 
     b = (struct soafs_block *)bh->b_data;
+
+    if(b == NULL)
+    {
+        printk("%s: [ERRORE GET DATA] Errore nella recupero del contenuto del blocco %lld dal dispositivo\n", MOD_NAME, offset);
+        brelse(bh);
+        index = (my_epoch & MASK) ? 1 : 0;
+        __sync_fetch_and_add(&(gp->standing_sorted[index]),1);
+        wake_up_interruptible(&the_queue);
+        wake_up_umount();
+        return -EIO;
+    }
 
     dim = b->dim;
 
@@ -159,6 +182,14 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
     
     /* Copio i dati verso l'utente */
     byte_ret = copy_to_user(destination, b->msg, byte_copy);
+
+    brelse(bh);
+
+    index = (my_epoch & MASK) ? 1 : 0;
+
+    __sync_fetch_and_add(&(gp->standing_sorted[index]),1);
+
+    wake_up_interruptible(&the_queue);
 
     wake_up_umount();
 
@@ -188,7 +219,7 @@ asmlinkage uint64_t sys_put_data(char * source, size_t size){
     LOG_SYSTEM_CALL("PUT_DATA", "put_data");
 #endif
 
-    /* Eseguo il controllo sulla dimensione richiesta dall'utente */
+    /* Eseguo il controllo sul parametro della dimensione richiesta dall'utente */
     if(check_size(size))
     {
         LOG_PARAM_ERR("PUT_DATA", "put_data");
@@ -215,7 +246,7 @@ asmlinkage uint64_t sys_put_data(char * source, size_t size){
     /* Recupero le informazioni FS specific */
     sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
 
-    /* Verifico se i blocchi sono già tutti occupati */
+    /* Verifico se i blocchi del dispositivo sono già tutti occupati */
 
     if( (head_free_block_list == NULL) && (num_block_free_used == sbi->num_block_free) )
     {
@@ -240,7 +271,7 @@ asmlinkage uint64_t sys_put_data(char * source, size_t size){
 retry:
         if(n > 5)
         {
-            printk("%s: [ERRORE PUT DATA] Numero di tentativi esaurito per il recupero di un blocco libero.\n", MOD_NAME);
+            printk("%s: [ERRORE PUT DATA] Numero di tentativi esaurito per il recupero di un blocco libero\n", MOD_NAME);
             wake_up_umount();
             return -ENOMEM;
         }
@@ -260,9 +291,9 @@ retry:
 
         if(ret)
         {
-                printk("%s: [ERRORE PUT DATA] Errore esecuzione kmalloc() nel recupero di un blocco libero\n", MOD_NAME);
-                wake_up_umount();
-                return -EIO;    
+            printk("%s: [ERRORE PUT DATA] Errore esecuzione kmalloc() nel recupero di un blocco libero\n", MOD_NAME);
+            wake_up_umount();
+            return -EIO;    
         }
   
         /*
@@ -274,10 +305,10 @@ retry:
         {
 
 #ifdef NOT_CRITICAL_BUT_PUT
-                printk("%s: [ERRORE PUT DATA] Non ci sono più blocchi liberi da utilizzare\n", MOD_NAME);
+            printk("%s: [ERRORE PUT DATA] Non ci sono più blocchi liberi da utilizzare\n", MOD_NAME);
 #endif
-                wake_up_umount();
-                return -ENOMEM;
+            wake_up_umount();
+            return -ENOMEM;
         }
 
         /* La lista si è nuovamente svuotata ma provo a caricarci nuovamente i blocchi liberi rimanenti. */
@@ -298,7 +329,6 @@ retry:
     if(item == NULL)
     {
         printk("%s: [ERRORE PUT DATA] Errore nel recupero di un blocco libero\n", MOD_NAME);
-
         wake_up_umount();
         return -ENOMEM;
     }
@@ -321,7 +351,7 @@ retry:
 
     if(ret)
     {
-        printk("%s: [ERRORE PUT DATA] Errore nell'inserimento del blocc %lld all'interno della Sorted List\n", MOD_NAME, index);
+        printk("%s: [ERRORE PUT DATA] Errore nell'inserimento del blocco %lld all'interno della Sorted List\n", MOD_NAME, index);
         insert_free_list_conc(item);
         wake_up_umount();
         return -EIO;
@@ -393,11 +423,12 @@ asmlinkage int sys_invalidate_data(uint64_t offset){
 #ifdef NOT_CRITICAL_INVAL
         printk("%s: [ERRORE INVALIDATE DATA] E' stata richiesta l'invalidazione del blocco %lld ma il blocco non è valido\n", MOD_NAME, offset);
 #endif
+
         wake_up_umount();
         return -ENODATA;
     }
 
-    /* Rimuovi il blocco dalla lista Sorted List e modifica il bit di stato nella bitmask */
+    /* Rimuovo il blocco dalla Sorted List e setto correttamente il bit di stato nella bitmask */
     ret = invalidate_data_block(offset);
 
     if(ret)
@@ -405,9 +436,9 @@ asmlinkage int sys_invalidate_data(uint64_t offset){
 
 #ifdef NOT_CRITICAL_BUT_INVAL
         printk("%s: [ERRORE INVALIDATE DATA] L'invalidazione del blocco %lld non è stata eseguita con successo\n", MOD_NAME, offset);  
-#endif       
-        wake_up_umount();
+#endif
 
+        wake_up_umount();
         return -ENODATA;
     }
 

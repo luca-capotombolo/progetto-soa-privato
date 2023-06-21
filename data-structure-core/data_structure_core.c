@@ -255,10 +255,10 @@ int insert_new_data_block(uint64_t index, char * source, size_t msg_size)
     /* Recupero le informazioni FS specific */
     sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
 
-    /* Gestione della concorrenza con le invalidazioni */
-
     /* Inizializzo il numero di tentativi */
     n = 0;
+
+    /* Gestione della concorrenza con le invalidazioni */
 
 retry_mutex_inval_insert:
 
@@ -293,10 +293,6 @@ retry_mutex_inval_insert:
     /* Comunico la presenza del thread che effettuerà l'inserimento di un nuovo blocco */
     __sync_fetch_and_add(&sync_var,1);
 
-#ifdef NOT_CRITICAL_BUT_PUT
-    printk("%s: [PUT DATA - SORTED LIST] Segnalata la presenza per l'inserimento del blocco %lld\n", MOD_NAME, index);
-#endif
-
     mutex_unlock(&inval_insert_mutex);
 
     /* Recupero il nuovo blocco che dovrò inserire all'interno della lista */
@@ -313,7 +309,11 @@ retry_mutex_inval_insert:
 
     if(b_data_x == NULL)
     {
-        printk("%s: Errore con NULL\n", MOD_NAME);
+        if(bh_x != NULL)
+            brelse(bh_x);
+
+         __sync_fetch_and_sub(&sync_var,1);
+        wake_up_interruptible(&the_queue);
         return 1;
     }
 
@@ -345,7 +345,14 @@ retry_mutex_inval_insert:
 
     if(b_data_sb == NULL)
     {
-        printk("%s: Errore NULL pt2\n", MOD_NAME);
+        if(bh_x != NULL)
+            brelse(bh_x);
+        
+        if(bh_sb != NULL)
+            brelse(bh_sb);
+
+         __sync_fetch_and_sub(&sync_var,1);
+        wake_up_interruptible(&the_queue);
         return 1;
     }
 
@@ -362,6 +369,12 @@ retry_mutex_inval_insert:
 
         if(!ret_cmp)
             goto no_empty;
+
+        if(bh_x!=NULL)
+            mark_buffer_dirty(bh_x);
+
+        if(bh_sb!=NULL)
+            mark_buffer_dirty(bh_sb);
         
         if(bh_x != NULL)
             brelse(bh_x);
@@ -404,7 +417,17 @@ no_empty:
 
     if(b_data == NULL)
     {
-        printk("%s: NULL pt3\n", MOD_NAME);
+        if(bh_x != NULL)
+            brelse(bh_x);
+        
+        if(bh_sb != NULL)
+            brelse(bh_sb);
+
+        if(bh_b != NULL)
+            brelse(bh_b);
+
+         __sync_fetch_and_sub(&sync_var,1);
+        wake_up_interruptible(&the_queue);
         return 1;
     }
 
@@ -499,8 +522,6 @@ retry_put_data_while:
     if(bh_b!=NULL)
         brelse(bh_b);
 
-    //scan_sorted_list();
-
     __sync_fetch_and_sub(&sync_var,1);
 
     wake_up_interruptible(&the_queue);
@@ -546,8 +567,6 @@ static struct result_inval * remove_data_block(uint64_t index)
         return NULL;
     }
 
-    //scan_sorted_list();
-
     /* Prendo il riferimento al superblocco che mantiene l'indice del blocco in testa alla Sorted List */
     bh_sb = get_sb_block();
 
@@ -561,20 +580,51 @@ static struct result_inval * remove_data_block(uint64_t index)
 
     b_data_sb = (struct soafs_super_block *)bh_sb->b_data;
 
+    if(b_data_sb == NULL)
+    {
+        printk("%s: [ERRORE INVALIDATE DATA] Errore puntatore a NULL per il superblocco del device\n", MOD_NAME);
+        brelse(bh_sb);
+        res_inval->code = 2;
+        res_inval->bh = NULL;
+        return res_inval;
+    }
+
+    /* Recupero le informazioni FS specific */
+    sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
+
+    if(b_data_sb->head_sorted_list == sbi->num_block)
+    {
+        printk("%s: [ERRORE INVALIDATE DATA] La Sorted List risulta vuota ma non può essere vuota\n", MOD_NAME);
+        brelse(bh_sb);
+        res_inval->code = 3;
+        res_inval->bh = NULL;
+        return res_inval;
+    }
+
     /* Prendo il riferimento al blocco in testa alla Sorted List */
 
     bh_block = get_block(b_data_sb->head_sorted_list);
 
     if(bh_block == NULL)
     {
-        brelse(bh_sb);
         printk("%s: [ERRORE INVALIDATE DATA] Errore nella lettura del blocco in testa alla Sorted List\n", MOD_NAME);
+        brelse(bh_sb);
         res_inval->code = 2;
         res_inval->bh = NULL;
         return res_inval;
     }
 
     b_data_block = (struct soafs_block *)bh_block->b_data;
+
+    if(b_data_block == NULL)
+    {
+        printk("%s: [ERRORE INVALIDATE DATA] Errore puntatore a NULL per il superblocco del device\n", MOD_NAME);
+        brelse(bh_sb);
+        brelse(bh_block);
+        res_inval->code = 2;
+        res_inval->bh = NULL;
+        return res_inval;
+    }
         
     /*
      * A questo punto, osservo che il campo 'head_sorted_list' non può essere modificato
@@ -615,9 +665,6 @@ static struct result_inval * remove_data_block(uint64_t index)
 
     /* Inizio ad iterare partendo dal secondo elemento all'interno della Sorted List */
     curr_index = b_data_block->next;
-
-    /* Recupero le informazioni FS specific */
-    sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
 
     /*
      * Itero finché non trovo l'elemento all'interno della Sorted List oppure finché non raggiungo la fine della lista.
@@ -660,7 +707,7 @@ static struct result_inval * remove_data_block(uint64_t index)
      */
     if(curr_index == sbi->num_block)
     {
-        printk("%s: Errore la lista è stata attraversata totalmente\n", MOD_NAME);
+        printk("%s: [ERRORE INVALIDATE DATA] La Sorted List è stata attraversata totalmente senza trovare il blocco\n", MOD_NAME);
         brelse(bh_sb);
         brelse(bh_block);
         res_inval->code = 3;
@@ -692,8 +739,7 @@ static struct result_inval * remove_data_block(uint64_t index)
 
     if(!ret)
     {
-        printk("%s: Errore nella compare and swap per la modifica del predecessore\n", MOD_NAME);
-        printk("%s: Indice richiesto da invalidare %lld\tIndice successore del predecessore %lld\n", MOD_NAME, index, b_data_block_prev->next);
+        printk("%s: [ERRORE INVALIDATE DATA] Errore nella compare and swap per la modifica del predecessore\n", MOD_NAME);
         brelse(bh_sb);
         brelse(bh_block);
         brelse(bh_block_prev);
@@ -723,13 +769,14 @@ static struct result_inval * remove_data_block(uint64_t index)
  *
  * @index: Indice del blocco da invalidare
  *
- * Durante un'invalidazione non è possibile che la stato della Sorted List venga modificato.
- * Infatti, durante un''invalidazione non è possibile avere un'ulteriore invalidazione oppure
- * l'inserimento di un nuovo blocco. Una volta avvisati gli altri thread sull'invalidazione
+ * Durante un'invalidazione non è possibile che lo stato della Sorted List venga modificato.
+ * Infatti, durante un'invalidazione non è possibile avere un'ulteriore invalidazione oppure
+ * l'inserimento di un nuovo blocco. Una volta avvisati gli altri thread per l'invalidazione
  * che deve essere eseguita, il thread ricerca il blocco target all'interno della Sorted List
  * per rimuoverlo e per invalidarlo.
  *
- * Restituisce il valore 0 in caso di successo; altrimenti può restituire i seguenti valori:
+ * @returns: Restituisce il valore 0 in caso di successo; altrimenti può restituire i seguenti
+ * valori:
  * - 1 se il blocco già era non valido e il thread non l'ha invalidato
  * - 2 se si è verificato un errore durante l'invalidazione
  * - 3 se si è verificato un comportamento anomalo nell'invalidazione
@@ -737,6 +784,7 @@ static struct result_inval * remove_data_block(uint64_t index)
 int invalidate_data_block(uint64_t index)
 {
     int n;
+    int code;
     int index_sorted;
     uint64_t num_insert;
 
@@ -804,13 +852,12 @@ retry_invalidate:
 
     if(sync_var)
     {
-        printk("%s: [ANOMALIA INVALIDATE DATA] Verificare il valore di sync_var\n", MOD_NAME);
         mutex_unlock(&inval_insert_mutex);
         mutex_unlock(&invalidate_mutex);
         return 3;
     }
 
-    /* Comunico l'inizio del processo di invalidazione */
+    /* Comunico l'inizio del processo di invalidazione ai threads che devono fare gli inserimenti */
     __atomic_exchange_n (&(sync_var), 0X8000000000000000, __ATOMIC_SEQ_CST);
 
     /* Termino la sezione critica */
@@ -819,12 +866,12 @@ retry_invalidate:
     /* 
      * Arrivato a questo punto, sono l'unico thread in esecuzione che può effettivamente modificare
      * lo stato del dispositivo. Poiché sono arrivato fino a questo punto, il controllo sul bit di
-     * validità eseguito nella system call precedentemente è terminato con successo. Di conseguenza,
+     * validità eseguito precedentemente nella system call è terminato con successo. Di conseguenza,
      * il blocco richiesto poteva effettivamente essere invalidato. Tuttavia, potrei essere stato in
      * attesa per entrare in sezione critica e, nel frattempo, qualche altro thread potrebbe aver
      * invalidato il blocco richiesto. A questo punto, eseguo un altro controllo sullo stato di
-     * validità del blocco. Poiché no c'é nessuna altra invalidazione in corso, se questo blocco è
-     * ancora valido allora posso procedere con l'invalidazione effettiva.
+     * validità del blocco. Poiché non c'é nessuna altra invalidazione in corso, se questo blocco è
+     * ancora valido allora posso procedere con l'invalidazione effettiva del blocco.
      */
 
     if(!check_bit(index))
@@ -835,21 +882,34 @@ retry_invalidate:
         return 1;
     }
 
-    /* Rimuove effettivamente il blocco dalla Sorted List nel device */
+    /* Rimuovo effettivamente il blocco dalla Sorted List nel device */
     res_inval = remove_data_block(index);
 
-    //TODO: Vedi se la gestione dell'errore è corretta
-    if( (res_inval == NULL) || res_inval->code )
+    if(res_inval == NULL)
     {
         __atomic_exchange_n (&(sync_var), 0X0000000000000000, __ATOMIC_SEQ_CST);
         mutex_unlock(&invalidate_mutex);
         wake_up_interruptible(&the_queue);
-        return res_inval->code;
+        return 2;
     }
+
+    if( res_inval->code )
+    {
+        __atomic_exchange_n (&(sync_var), 0X0000000000000000, __ATOMIC_SEQ_CST);
+        mutex_unlock(&invalidate_mutex);
+        wake_up_interruptible(&the_queue);
+        code = res_inval->code;
+        kfree(res_inval);
+        return code;
+    }
+
+    /* Modifico il suo stato di validità all'interno della bitmask */
+    set_bitmask(index,0);
 
     updated_epoch_sorted = (gp->next_epoch_index_sorted) ? MASK : 0;
 
     gp->next_epoch_index_sorted += 1;
+
     gp->next_epoch_index_sorted %= 2;
 
     last_epoch_sorted = __atomic_exchange_n (&(gp->epoch_sorted), updated_epoch_sorted, __ATOMIC_SEQ_CST);
@@ -858,17 +918,9 @@ retry_invalidate:
 
     grace_period_threads_sorted = last_epoch_sorted & (~MASK);
 
-#ifdef NOT_CRITICAL_INVAL
-    printk("%s: [INVALIDATE DATA] Attesa della terminazione del grace period lista ordinata: #threads %ld\n", MOD_NAME, grace_period_threads_sorted);
-#endif
-
 sleep_again:
 
     wait_event_interruptible_timeout(the_queue, gp->standing_sorted[index_sorted] >= grace_period_threads_sorted, msecs_to_jiffies(100));    
-
-#ifdef NOT_CRITICAL_INVAL
-    printk("%s: [INVALIDATE DATA] gp->standing_sorted[index_sorted] = %ld\tgrace_period_threads_sorted = %ld\n", MOD_NAME, gp->standing_sorted[index_sorted], grace_period_threads_sorted);
-#endif
 
     if(gp->standing_sorted[index_sorted] < grace_period_threads_sorted)
     {
@@ -881,9 +933,8 @@ sleep_again:
     /* Recupero le informazioni FS specific */
     sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
 
-    // TODO: Terminato il Grace Period posso aggiornare il puntatore del blocco in modo sicuro
+    /* Scollego totalmente il blocco invalidato dalla Sorted List (sia predecessore che successore) */
     ((struct soafs_block *)res_inval->bh->b_data)->next = sbi->num_block;
-    asm volatile ("mfence");
 
 retry_kmalloc_invalidate_block:
 
@@ -906,21 +957,18 @@ retry_kmalloc_invalidate_block:
 
     insert_free_list_conc(bf);
 
-    /*
-     * A seguito della rimozione del blocco dalla Sorted List e dell'inserimento del suo indice
-     * all'interno della lista dei blocchi liberi, setto il relativo bit di validità a 0.
-     */
-
-    set_bitmask(index,0);
-
     __atomic_exchange_n (&(sync_var), 0X0000000000000000, __ATOMIC_SEQ_CST);
 
     /* Rilascio il mutex per permettere successive invalidazioni */
     mutex_unlock(&invalidate_mutex);
 
-    wake_up_interruptible(&the_queue);    
+    wake_up_interruptible(&the_queue);
 
-    return res_inval->code;
+    code = res_inval->code;
+
+    kfree(res_inval);
+
+    return code;
 }
 
 
