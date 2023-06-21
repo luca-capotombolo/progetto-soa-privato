@@ -641,7 +641,10 @@ static void soafs_kill_sb(struct super_block *sb)
     /* Attendo che i threads in esecuzione terminino di lavorare sul FS */
 
     while(num_threads_run != 0)
-        wait_event_interruptible_timeout(umount_queue, num_threads_run == 0, msecs_to_jiffies(100));
+    {
+        printk("%s: [SMONTAGGIO] Numero di thread in esecuzione: %lld\n", MOD_NAME, num_threads_run);         
+        wait_event_interruptible_timeout(umount_queue, num_threads_run == 0, msecs_to_jiffies(100));    
+    }
 
     /*
      * La variabile 'is_free' è settata a 1 nel momento in cui non si deve eseguire il processo di

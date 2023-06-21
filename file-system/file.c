@@ -33,7 +33,7 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
 
     if(!is_mounted)
     {
-        LOG_DEV_ERR("GET_DATA", "get_data");
+        LOG_DEV_ERR("READ_DRIVER", "read_driver");
         return -ENODEV;
     }
     
@@ -44,7 +44,7 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
     if(stop)
     {
         wake_up_umount();
-        LOG_DEV_ERR("GET_DATA", "get_data");
+        LOG_DEV_ERR("READ_DRIVER", "read_driver");
         return -ENODEV;
     }
 
@@ -53,6 +53,10 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
         wake_up_umount();
         return 0;
     }
+
+    bh_b = NULL;
+
+    bh_sb = NULL;
 
     my_epoch = __sync_fetch_and_add(&(gp->epoch_sorted),1);
 
@@ -64,7 +68,7 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
 
     if(bh_sb == NULL)
     {
-        printk("%s: [ERRORE READ DRVIER] Errore lettura del superblocco\n", MOD_NAME);
+        printk("%s: [ERRORE READ DRVIER] Errore nella lettura del superblocco\n", MOD_NAME);
         index = (my_epoch & MASK) ? 1 : 0;
         __sync_fetch_and_add(&(gp->standing_sorted[index]),1);
         wake_up_interruptible(&the_queue);
@@ -88,10 +92,9 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
         return -EIO;
     }
 
-    /* Recupero l'indice del blocco in testa alla Sorted List che è contenuto nel superblocco del dispositivo */
-    curr_index = b_data_sb->head_sorted_list;
+    /* Controllo se la Sorted List è vuota */
 
-    if(curr_index == sbi->num_block)
+    if(b_data_sb->head_sorted_list == sbi->num_block)
     {
         printk("%s: [READ DRIVER] Attualmente non ci sono messaggi da consegnare\n", MOD_NAME);
         index = (my_epoch & MASK) ? 1 : 0;
@@ -113,7 +116,7 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
 
     if(msg_to_copy == NULL)
     {
-        printk("%s: [ERRORE READ DRIVER] Errore nell'allocazione di memoria per il messaggio da copiare\n", MOD_NAME);
+        printk("%s: [ERRORE READ DRIVER] Errore nell'allocazione della memoria per il messaggio da copiare\n", MOD_NAME);
         index = (my_epoch & MASK) ? 1 : 0;
         __sync_fetch_and_add(&(gp->standing_sorted[index]),1);
         wake_up_interruptible(&the_queue);
@@ -124,6 +127,9 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
 
         return -EIO;
     }
+
+    /* Recupero l'indice del blocco in testa alla Sorted List che è contenuto nel superblocco del dispositivo */
+    curr_index = b_data_sb->head_sorted_list;
 
     while(curr_index != sbi->num_block)
     {
@@ -223,15 +229,26 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
             }
 
             memcpy(msg_to_copy + bytes_copied, b_data->msg, byte_to_copy_iter);
-            bytes_copied += byte_to_copy_iter + 1;
-            msg_to_copy[bytes_copied - 1] = '\n';      
+
+            if((bytes_copied + len_msg) == len)
+            {
+                bytes_copied += byte_to_copy_iter;
+            }
+            else
+            {
+                bytes_copied += byte_to_copy_iter + 1;
+                msg_to_copy[bytes_copied - 1] = '\n';          
+            }
+      
         }
 
         curr_index = b_data->next;
     }
 
     index = (my_epoch & MASK) ? 1 : 0;
+
     __sync_fetch_and_add(&(gp->standing_sorted[index]),1);
+
     wake_up_interruptible(&the_queue);
 
     if(bytes_copied > 0)
@@ -246,9 +263,15 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
 
     *off = 1;
 
+    if(bh_sb != NULL)
+        brelse(bh_sb);
+
+    if(bh_b != NULL)
+        brelse(bh_b);
+
     wake_up_umount();
 
-    return bytes_copied - ret;
+    return (bytes_copied - ret);
 }
 
 
@@ -258,7 +281,7 @@ int onefilefs_open(struct inode *inode, struct file *file) {
 
     if(!is_mounted)
     {
-        LOG_DEV_ERR("GET_DATA", "get_data");
+        LOG_DEV_ERR("OPEN", "open");
         return -ENODEV;
     }
     
@@ -269,13 +292,13 @@ int onefilefs_open(struct inode *inode, struct file *file) {
     if(stop)
     {
         wake_up_umount();
-        LOG_DEV_ERR("GET_DATA", "get_data");
+        LOG_DEV_ERR("OPEN", "open");
         return -ENODEV;
     }
 
     printk("%s: Il dispositivo è stato aperto\n", MOD_NAME);
 
-    //wake_up_umount();
+    wake_up_umount();
 
     return 0;
 }
@@ -287,7 +310,7 @@ int onefilefs_release(struct inode *inode, struct file *file) {
 
     if(!is_mounted)
     {
-        LOG_DEV_ERR("GET_DATA", "get_data");
+        LOG_DEV_ERR("RELEASE", "release");
         return -ENODEV;
     }
     
@@ -298,19 +321,18 @@ int onefilefs_release(struct inode *inode, struct file *file) {
     if(stop)
     {
         wake_up_umount();
-        LOG_DEV_ERR("GET_DATA", "get_data");
+        LOG_DEV_ERR("RELEASE", "release");
         return -ENODEV;
     }
+
     printk("%s: Il dispositivo è stato chiuso\n", MOD_NAME);
 
-    //wake_up_umount();
-
-    __sync_fetch_and_sub(&(num_threads_run),2);
-
-    wake_up_interruptible(&umount_queue);
+    wake_up_umount();
 
    	return 0;
 }
+
+
 
 
 struct dentry *onefilefs_lookup(struct inode *parent_inode, struct dentry *child_dentry, unsigned int flags) {

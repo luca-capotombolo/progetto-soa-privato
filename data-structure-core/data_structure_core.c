@@ -226,7 +226,7 @@ void scan_sorted_list(void)
 /**
  * insert_new_data_block - Inserisce un nuovo blocco all'interno della Sorted List e lo rende valido
  *
- * @index: Indice del nuovo blocco da inserire nella Sorted List e da invalidare
+ * @index: Indice del nuovo blocco da inserire nella Sorted List
  * @source: Puntatore al messaggio utente
  * @msg_size: Dimensione del messaggio da inserire all'interno del blocco
  *
@@ -238,7 +238,6 @@ void scan_sorted_list(void)
 int insert_new_data_block(uint64_t index, char * source, size_t msg_size)
 {
     int n;
-    int count;
     int ret_cmp;
     int bytes_ret;
     uint64_t next_block_index;
@@ -433,8 +432,6 @@ no_empty:
 
     n = 0;
 
-    count = 0;
-
 retry_put_data_while:
 
     if(n > 20)
@@ -457,8 +454,6 @@ retry_put_data_while:
 
     while(b_data->next != sbi->num_block)
     {
-
-        count++;
 
         next_block_index = b_data->next;
 
@@ -936,6 +931,8 @@ sleep_again:
     /* Scollego totalmente il blocco invalidato dalla Sorted List (sia predecessore che successore) */
     ((struct soafs_block *)res_inval->bh->b_data)->next = sbi->num_block;
 
+    asm volatile ("mfence");
+
 retry_kmalloc_invalidate_block:
 
     /*
@@ -1050,10 +1047,11 @@ static void check_consistenza(void)
 
 
 
-/*
+/**
  * get_freelist_head - Recupero l'elemento in testa alla Free List
  *
- * Restituisce l'indice del blocco libero che si trova in testa alla lista.
+ * @returns: Restituisce il puntatore alla struttura dati contenente l'indice del blocco libero che
+ *           si trova in testa alla lista in caso di successo; altrimenti restituisce NULL.
  */
 struct block_free * get_freelist_head(void)
 {

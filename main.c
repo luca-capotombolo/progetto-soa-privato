@@ -207,13 +207,24 @@ __SYSCALL_DEFINEx(2, _put_data, char *, source, size_t, size){
 #else
 asmlinkage uint64_t sys_put_data(char * source, size_t size){
 #endif
+    int bits;
+    int array_entry;
+    int bitmask_entry;
     int n;
     int ret;  
     int available_data;
+
     size_t msg_size; 
+
     uint64_t index;
+    uint64_t base;
+    uint64_t shift_base;
+    uint64_t offset;
+    uint64_t *block_state;
+
     struct block_free *item;
     struct soafs_sb_info *sbi;
+    struct buffer_head *bh;
 
 #ifdef LOG
     LOG_SYSTEM_CALL("PUT_DATA", "put_data");
@@ -336,6 +347,33 @@ retry:
     /* Recupero l'indice del blocco libero da utilizzare per scrivere il nuovo messaggio */
     index = item -> block_index;
 
+    bits = sizeof(uint64_t) * 8;    
+
+    /* Determino il blocco di stato che contiene l'informazione relativa al blocco richiesto */
+    bitmask_entry = index / (SOAFS_BLOCK_SIZE << 3);
+
+    bh = sb_bread(sb_global, 2 + bitmask_entry);
+    
+    if(bh == NULL)
+    {
+        printk("%s: [ERRORE PUT DATA] Errore nella lettura della bitmask\n", MOD_NAME);
+        insert_free_list_conc(item);
+        wake_up_umount();
+        return -EIO;
+    }
+
+    block_state = (uint64_t *)bh->b_data;    
+
+    /* Determino la entry dell'array */
+    array_entry = (index  % (SOAFS_BLOCK_SIZE << 3)) / bits;
+
+    /* Determino l'offset nella entry dell'array */
+    offset = index % bits;
+    
+    base = 1;
+
+    shift_base = base << offset;
+
     /* Calcolo la dimensione massima del messaggio che può essere memorizzato nel blocco */
 
     available_data = SOAFS_BLOCK_SIZE - (sizeof(uint64_t) + sizeof(unsigned short));
@@ -353,14 +391,18 @@ retry:
     {
         printk("%s: [ERRORE PUT DATA] Errore nell'inserimento del blocco %lld all'interno della Sorted List\n", MOD_NAME, index);
         insert_free_list_conc(item);
+
+        if(bh != NULL)
+            brelse(bh);
+
         wake_up_umount();
         return -EIO;
     }
    
+    __sync_fetch_and_or(&(block_state[array_entry]), shift_base);
+
     /* Dealloco l'elemento rimosso precedentemente dalla Free List */
-    kfree(item);
-    
-    set_bitmask(index, 1);    
+    kfree(item);   
 
 #ifdef NOT_CRITICAL_BUT_PUT
     printk("%s: [PUT DATA] Il messaggio '%s' è stato inserito con successo nel blocco %lld\n", MOD_NAME, msg, index);

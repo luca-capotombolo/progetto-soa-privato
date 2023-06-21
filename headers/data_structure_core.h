@@ -15,7 +15,7 @@
  * @next: Puntatore all'elemento successivo nella lista dei blocchi liberi
  *
  * Rappresenta un singolo elemento che viene inserito all'interno della lista
- * free_block_list che mantiene le informazioni su un blocco libero.
+ * free_block_list e mantiene le informazioni su un blocco libero.
  */
 struct block_free {
     uint64_t block_index;
@@ -35,7 +35,6 @@ struct grace_period {
 
 extern int is_free;
 extern uint64_t num_block_free_used;
-//extern struct block *head_sorted_list;                          /* Puntatore alla testa della lista contenente i blocchi nell'ordine di consegna. */
 extern struct block_free *head_free_block_list;                 /* Puntatore alla testa della lista contenente i blocchi liberi. */
 extern struct grace_period *gp;
 

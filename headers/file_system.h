@@ -48,8 +48,8 @@
  * @num_block: Numero totale di blocchi del device
  * @num_block_free: Numero totale dei blocchi liberi al montaggio
  * @num_block_state: Numero totale dei blocchi di stato
- * @update_list_size: Numero massimo di nuovi blocchi da caricare
- * @actual_size: Dimensione effettiva dell'array di indici liberi 'index_free'
+ * @update_list_size: Numero massimo di nuovi blocchi da caricare nella Free List quando diventa vuota
+ * @actual_size: Dimensione effettiva dell'array di indici dei blocchi liberi 'index_free'
  * @head_sorted_list: Indice del blocco in testa alla Sorted List
  * @index_free: Sottoinsieme dei blocchi liberi al montaggio
  * @padding: Bit di Padding
@@ -81,16 +81,16 @@ struct soafs_super_block {
 struct soafs_block {
     uint64_t next;
     unsigned short dim;
-    char msg[SOAFS_BLOCK_SIZE - (sizeof(long long int) + sizeof(unsigned short))];
+    char msg[SOAFS_BLOCK_SIZE - (sizeof(uint64_t) + sizeof(unsigned short))];
 };
 
 
 
 /**
  * @num_block: Numero dei blocchi del dispositivo
- * @num_block_free: Numero dei blocchi liberi nel dispositivo
+ * @num_block_free: Numero dei blocchi liberi nel dispositivo al montaggio
  * @num_block_state: Numero dei blocchi di stato nel dispositivo
- * @update_list_size: Numero massimo di nuovi blocchi da caricare
+ * @update_list_size: Numero massimo di nuovi blocchi da caricare nella Free List quando diventa vuota
  *
  * Mantiene le informazioni specifiche del SB del FS.
  */

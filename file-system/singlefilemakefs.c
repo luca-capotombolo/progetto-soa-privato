@@ -24,8 +24,7 @@ int main(int argc, char *argv[])
     int n;
 	char *block_padding;
 	char *file_body = "Blocco #%d.";    
-    ssize_t ret;
-    uint64_t metadata = 0x0000000000000000;     /* Posizione del blocco nella lista ordinata */    
+    ssize_t ret;   
     uint64_t nblocks;                           /* Numero totale di blocchi */    
     uint64_t nblocks_state;                     /* Numero totale blocchi di stato */    
     uint64_t nblocks_data;                      /* Numero totale dei blocchi di dati */    
@@ -45,7 +44,7 @@ int main(int argc, char *argv[])
 	fd = open(argv[1], O_RDWR);
 
 	if (fd == -1) {
-		perror("Errore nell'apertura del device.\n");
+		perror("Errore nell'apertura del device:");
 		return -1;
 	}
 
@@ -53,18 +52,17 @@ int main(int argc, char *argv[])
 
     actual_size = atoi(argv[4]);
 
-    if(SIZE_INIT > 506)
+    if(SIZE_INIT > 505)
     {
-        printf("Il valore di SIZE_INIT non può essere maggiore di 506\n");
+        printf("Il valore di SIZE_INIT non può essere maggiore di 505\n");
         return -1;
     }
 
     /*
-     * Verifico se si sta chiedendo di caricare
-     * nella lista dei blocchi liberi un numero
-     * di blocchi che è maggiore della dimensione
-     * massima della lista.
+     * Verifico se si sta chiedendo di caricare nella lista dei blocchi liberi un numero
+     * di blocchi che è maggiore della dimensione massima della lista.
      */
+
     if(actual_size > SIZE_INIT)
     {
         printf("La dimensione richiesta %ld è maggiore della dimensione massima dell'array %d\n", actual_size, SIZE_INIT);
@@ -119,12 +117,11 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    /* Computo il numero dei blocchi di stato.
-     * Il valore SOAFS_BLOCK_SIZE << 3 rappresenta
-     * il numero di bit che ho a disposizione in un
-     * singolo blocco. La differenza nblocks - 2
-     * rappresenta il nummero di blocchi di dati
+    /* Computo il numero dei blocchi di stato. Il valore SOAFS_BLOCK_SIZE << 3 rappresenta
+     * il numero di bit che ho a disposizione in un singolo blocco. La differenza nblocks - 2
+     * rappresenta il nummero dei blocchi di dati.
      */
+
     if((nblocks_data % (SOAFS_BLOCK_SIZE << 3)) == 0)
     {
         nblocks_state = (nblocks_data) / (SOAFS_BLOCK_SIZE << 3);
@@ -163,12 +160,11 @@ int main(int argc, char *argv[])
     /* Numero dei blocchi di stato */
     sb.num_block_state = nblocks_state;
 
-    /* Dimensione effettiva dell'array */
+    /* Numero massimo di blocchi al caricamento */
     sb.update_list_size = update_list_size;
 
     /*
-     * inserisci i primi actual_size blocchi liberi.
-     * In questa versione, tutti i blocchi sono
+     * inserisco i primi actual_size blocchi liberi poiché in questa versione assumo che tutti i blocchi sono
      * inizialmente liberi.
      */
     for(uint64_t k=0; k<actual_size; k++)
@@ -176,15 +172,20 @@ int main(int argc, char *argv[])
         sb.index_free[k] = k;
     }
 
-    /* Inserisco la dimensione effettiva dell'array */
-    sb.actual_size = actual_size; 
+    /* Dimensione effettiva dell'array */
+    sb.actual_size = actual_size;
 
-    /* Inizialmente la Sorted List logica è vuota */
+    /*
+     * Inizialmente la Sorted List logica è vuota. Per indicare che il valore della testa è NULL
+     * ho deciso di utilizzare un indice che non appartiene a nessun blocco di dati.    
+     */
+
     sb.head_sorted_list = sb.num_block;
 
 	ret = write(fd, (char *)&sb, sizeof(sb));
 
-	if (ret != SOAFS_BLOCK_SIZE) {
+	if (ret != SOAFS_BLOCK_SIZE)
+    {
 		printf("Il numero di bytes che sono stati scritti [%d] non è uguale alla dimensione del blocco.\n", (int)ret);
 		close(fd);
 		return -1;
@@ -204,17 +205,13 @@ int main(int argc, char *argv[])
     /* Numero dei blocchi di dati */
     file_inode.data_block_number = nblocks_data;
 
-    /*
-     * La dimensione del file è pari al contenuto di tutti i
-     * blocchi di dati che sono presenti all'interno del block
-     * device con contenuto valido. Inizialmente, assumo che
-     * tutti i blocchi hanno un contenuto non valido.
-     */
 	file_inode.file_size = 0;
 
     /* Scrittura dei dati effettivi dell'inode */
 	ret = write(fd, (char *)&file_inode, sizeof(file_inode));
-	if (ret != sizeof(file_inode)) {
+
+	if (ret != sizeof(file_inode))
+    {
 		printf("Errore nella scrittura dei dati effettivi del blocco che mantiene l'inode del file.\n");
 		close(fd);
 		return -1;
@@ -234,7 +231,9 @@ int main(int argc, char *argv[])
     }
 
 	ret = write(fd, block_padding, nbytes);
-	if (ret != nbytes) {
+
+	if (ret != nbytes)
+    {
 		printf("Errore nella scrittura dei byte di padding nel blocco dell'inode del file.\n");
 		close(fd);
 		return -1;
@@ -242,6 +241,7 @@ int main(int argc, char *argv[])
 
 
 	printf("Il blocco contenente l'inode del file è stato scritto con successo.\n");
+
     fflush(stdout);
 
 	/* Popolo i blocchi di stato del device */
@@ -263,7 +263,8 @@ int main(int argc, char *argv[])
 
 	    ret = write(fd, (void *)block_state, SOAFS_BLOCK_SIZE);
 
-	    if (ret != SOAFS_BLOCK_SIZE) {
+	    if (ret != SOAFS_BLOCK_SIZE)
+        {
 		    printf("Errore nella scrittura dei dati per il blocco %d.\n", i);
 		    close(fd);
 		    return -1;
@@ -271,7 +272,6 @@ int main(int argc, char *argv[])
     }
 
 	printf("I blocchi di stato sono stati scritti con successo.\n");
-
 
     for(i=0; i<nblocks_data; i++)
     {
@@ -285,15 +285,13 @@ int main(int argc, char *argv[])
 
         memset(block, 0, sizeof(struct soafs_block));
 
+        /* Inizialmente non contengono alcun byte valido */
         block->dim = 0;
-
-        metadata += 1;
-        
-        sprintf(block->msg, file_body, i);
 
 	    ret = write(fd, block, sizeof(struct soafs_block));
 
-	    if (ret != SOAFS_BLOCK_SIZE) {
+	    if (ret != SOAFS_BLOCK_SIZE)
+        {
 		    printf("Errore nella scrittura dei dati per il blocco %d.\n", i);
 		    close(fd);
 		    return -1;
