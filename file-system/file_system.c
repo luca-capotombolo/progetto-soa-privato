@@ -109,11 +109,14 @@ static int set_free_block(void)
         /* Non ci sono blocchi attualmente liberi nel dispositivo */
         b->num_block_free = 0;
 
-        mark_buffer_dirty(bh);
+        if(bh != NULL)
+        {
+            mark_buffer_dirty(bh);
 
-        sync_dirty_buffer(bh);
+            sync_dirty_buffer(bh);
     
-        brelse(bh);
+            brelse(bh);
+        }
 
         return 0;
     }
@@ -125,6 +128,8 @@ static int set_free_block(void)
     if(free_blocks == NULL)
     {
         printk("%s: [ERRORE SMONTAGGIO - SET FREE BLOCK] Errore nell'allocazione dell'array 'free_blocks'\n", MOD_NAME);
+        if(bh != NULL)
+            brelse(bh);
         return 1;
     }
 
@@ -152,6 +157,8 @@ static int set_free_block(void)
         if(ret == 2)
         {
             printk("%s: [ERRORE SMONTAGGIO - SET FREE BLOCK] Errore nel determinare la validità del blocco #%lld\n", MOD_NAME, index);
+            if(bh != NULL)
+                brelse(bh);
             return 1;
         }
 
@@ -186,11 +193,14 @@ static int set_free_block(void)
         b-> index_free[index] = free_blocks[index];
     }
 
-    mark_buffer_dirty(bh);
+    if(bh != NULL)
+    {
+        mark_buffer_dirty(bh);
 
-    sync_dirty_buffer(bh);
+        sync_dirty_buffer(bh);
     
-    brelse(bh);
+        brelse(bh);
+    }
 
     kfree(free_blocks);
 
