@@ -230,7 +230,7 @@ asmlinkage uint64_t sys_put_data(char * source, size_t size){
     LOG_SYSTEM_CALL("PUT_DATA", "put_data");
 #endif
 
-    /* Eseguo il controllo sul parametro della dimensione richiesta dall'utente */
+    /* Eseguo il controllo sul parametro relativo alla dimensione richiesta dall'utente */
     if(check_size(size))
     {
         LOG_PARAM_ERR("PUT_DATA", "put_data");
@@ -239,7 +239,7 @@ asmlinkage uint64_t sys_put_data(char * source, size_t size){
 
     if(!is_mounted)
     {
-        LOG_DEV_ERR("GET_DATA", "get_data");
+        LOG_DEV_ERR("PUT_DATA", "put_data");
         return -ENODEV;
     }
     
@@ -250,7 +250,7 @@ asmlinkage uint64_t sys_put_data(char * source, size_t size){
     if(stop)
     {
         wake_up_umount();
-        LOG_DEV_ERR("GET_DATA", "get_data");
+        LOG_DEV_ERR("PUT_DATA", "put_data");
         return -ENODEV;
     }
 
@@ -310,7 +310,7 @@ retry:
         /*
          * Per via della concorrenza, è possibile che la testa della lista risulti essere NULL.
          * Se sono stati caricati nella lista dei blocchi liberi tutti gli indici liberi all'istante
-         * di montaggio, allora non esistono blocchi liberi da utilizzare.
+         * di montaggio, allora non esistono più blocchi liberi da utilizzare.
          */
         if( (head_free_block_list == NULL) && (num_block_free_used == sbi->num_block_free) )
         {
@@ -401,12 +401,20 @@ retry:
    
     __sync_fetch_and_or(&(block_state[array_entry]), shift_base);
 
-    /* Dealloco l'elemento rimosso precedentemente dalla Free List */
-    kfree(item);   
+    if(bh != NULL)
+        mark_buffer_dirty(bh);
 
-#ifdef NOT_CRITICAL_BUT_PUT
-    printk("%s: [PUT DATA] Il messaggio '%s' è stato inserito con successo nel blocco %lld\n", MOD_NAME, msg, index);
+#ifdef SYNC
+    if(bh != NULL)
+        sync_dirty_buffer(bh);
 #endif
+
+    if(bh != NULL)
+        brelse(bh);
+
+    /* Dealloco l'elemento rimosso precedentemente dalla Free List */
+
+    kfree(item);   
 
     wake_up_umount();
 

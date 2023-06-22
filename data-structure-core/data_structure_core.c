@@ -224,7 +224,7 @@ void scan_sorted_list(void)
 
 
 /**
- * insert_new_data_block - Inserisce un nuovo blocco all'interno della Sorted List e lo rende valido
+ * insert_new_data_block - Inserisce un nuovo blocco all'interno della Sorted List
  *
  * @index: Indice del nuovo blocco da inserire nella Sorted List
  * @source: Puntatore al messaggio utente
@@ -374,6 +374,14 @@ retry_mutex_inval_insert:
 
         if(bh_sb!=NULL)
             mark_buffer_dirty(bh_sb);
+
+#ifdef SYNC
+        if(bh_x!=NULL)
+            sync_dirty_buffer(bh_x);
+
+        if(bh_sb!=NULL)
+            sync_dirty_buffer(bh_sb);
+#endif
         
         if(bh_x != NULL)
             brelse(bh_x);
@@ -488,33 +496,33 @@ retry_put_data_while:
         goto retry_put_data_while;
     }
 
-    if(bh_x!=NULL)
+    if(bh_x != NULL)
         mark_buffer_dirty(bh_x);
 
-    if(bh_sb!=NULL)
+    if(bh_sb != NULL)
         mark_buffer_dirty(bh_sb);
 
-    if(bh_b!=NULL)
+    if(bh_b != NULL)
         mark_buffer_dirty(bh_b);
 
 #ifdef SYNC
-    if(bh_x!=NULL)
+    if(bh_x != NULL)
         sync_dirty_buffer(bh_x);
 
-    if(bh_sb!=NULL)
+    if(bh_sb != NULL)
         sync_dirty_buffer(bh_sb);
 
-    if(bh_b!=NULL)
+    if(bh_b != NULL)
         sync_dirty_buffer(bh_b);
 #endif
 
-    if(bh_x!=NULL)
+    if(bh_x != NULL)
         brelse(bh_x);
 
-    if(bh_sb!=NULL)
+    if(bh_sb != NULL)
         brelse(bh_sb);
 
-    if(bh_b!=NULL)
+    if(bh_b != NULL)
         brelse(bh_b);
 
     __sync_fetch_and_sub(&sync_var,1);
@@ -971,7 +979,7 @@ retry_kmalloc_invalidate_block:
 
 
 
-/*
+/**
  * insert_free_list_conc - Inserisce un nuovo elemento in testa alla Free List
  *
  * @item: Elemento da inserire in testa alla lista
@@ -1028,6 +1036,12 @@ static void check_consistenza(void)
         printk("%s: [CHECK CONSISTENZA FREE-LIST] Valore indice del blocco: %lld\n", MOD_NAME, bf->block_index);
     
         ret = check_bit(bf->block_index);
+
+        if(ret == 2)
+        {
+            printk("%s: [ERRORE CHECK CONSISTENZA] Errore nel recupero del blocco della bitmask per l'indice %lld\n", MOD_NAME, bf->block_index);
+            break;    
+        }
 
         if(ret)
         {
@@ -1109,7 +1123,7 @@ retry_freelist_head:
  * @index: Indice del blocco di cui si vuole verificare la validità
  * 
  * @returns: La funzione restituisce il valore 1 se il blocco di dati è valido,
- * il valore 0 se il blocco di dati non è valido e il valore 2 se si è verificato un errore.
+ *           il valore 0 se il blocco di dati non è valido e il valore 2 se si è verificato un errore.
  */
 int check_bit(uint64_t index)
 {
@@ -1129,7 +1143,8 @@ int check_bit(uint64_t index)
 
     bh = sb_bread(sb_global, 2 + bitmask_entry);
 
-    if(bh == NULL){
+    if(bh == NULL)
+    {
         printk("%s: [ERRORE CHECK BIT] Errore nella lettura del blocco di stato\n", MOD_NAME);
         return 2;
     }
@@ -1223,6 +1238,12 @@ int get_bitmask_block(void)
         printk("%s: [PUT DATA - RECUPERO BLOCCHI] Verifica della validità del blocco con indice %lld\n", MOD_NAME, index);
 #endif
         ret = check_bit(index);
+
+        if(ret == 2)
+        {
+            printk("%s: [PUT DATA - RECUPERO BLOCCHI] Errore nel controllo per la validità del blocco %lld\n", MOD_NAME, index);
+            return 1;
+        }
 
         if(!ret)
         {
