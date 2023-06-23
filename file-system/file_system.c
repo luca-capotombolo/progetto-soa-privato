@@ -159,8 +159,12 @@ static int set_free_block(void)
         if(ret == 2)
         {
             printk("%s: [ERRORE SMONTAGGIO - SET FREE BLOCK] Errore nel determinare la validità del blocco #%lld\n", MOD_NAME, index);
+            
+            kfree(free_blocks);
+
             if(bh != NULL)
                 brelse(bh);
+
             return 1;
         }
 
@@ -278,8 +282,7 @@ static int flush_bitmask(void)
  * free_all_memory - Dealloca le strutture dati core del modulo
  * 
  * Questa funzione ha il compito di deallocare le strutture dati core che sono
- * state utilizzate per l'attuale istanza di montaggio del FS. Le strutture dati
- * che devono essere deallocate sono la lista dei blocchi liberi e la Sorted List.
+ * state utilizzate per l'attuale istanza di montaggio del FS.
  *
  * @returns: La funzione non restituisce alcun valore.
  */
@@ -397,7 +400,7 @@ retry_house_keeper:
     printk("%s: [HOUSE KEEPER] Attesa della terminazione del grace period lista ordinata: #threads %ld\n", MOD_NAME, grace_period_threads_sorted);
 #endif
 
-sleep_again:
+sleep_again_hk:
 
     wait_event_interruptible_timeout(the_queue, gp->standing_sorted[index_sorted] >= grace_period_threads_sorted, msecs_to_jiffies(100));
 
@@ -410,7 +413,7 @@ sleep_again:
     if(gp->standing_sorted[index_sorted] < grace_period_threads_sorted)
     {
         printk("%s: [ERRORE HOUSE KEEPER] Il thread demone va nuovamente a dormire\n", MOD_NAME);
-        goto sleep_again;
+        goto sleep_again_hk;
     }
 
     gp->standing_sorted[index_sorted] = 0;
