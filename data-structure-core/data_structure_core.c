@@ -62,10 +62,10 @@ static void debugging_init(void)
 
 
 /**
- * get_block: Restituisce il puntatore superblocco del dispositivo
+ * get_block: Restituisce il puntatore al superblocco del dispositivo
  *
  * @returns: Restituisce il puntatore alla struttura dati buffer_head tramite cui è possibile
- *           raggiungere il superblocco.
+ *           raggiungere il superblocco oppure NULL in caso di insuccesso.
  */
 struct buffer_head *get_sb_block(void)
 {
@@ -91,7 +91,7 @@ struct buffer_head *get_sb_block(void)
  * @index: Indice del blocco del dispositivo che deve essere recuperato
  *
  * @returns: Restituisce il puntatore alla struttura dati buffer_head tramite cui è possibile
- *           raggiungere il blocco richiesto.
+ *           raggiungere il blocco richiesto oppure NULL in caso di insuccesso.
  */
 struct buffer_head *get_block(uint64_t index)
 {
@@ -110,114 +110,6 @@ struct buffer_head *get_block(uint64_t index)
     }
 
     return bh;
-}
-
-
-
-
-/**
- * scan_sorted_list - Esegue la scansione della Sorted List logica
- *
- * Questa funzione ha prevelentemente una funzione di debugging del modulo. Mi consente di osservare l'ordine
- * degli elementi che sono presenti all'interno della Sorted List.
- *
- * @returns: La funzione non restituisce alcun valore.
- */
-void scan_sorted_list(void)
-{
-    uint64_t curr_index;
-
-    struct soafs_block *b_data;
-    struct soafs_super_block *b_data_sb;
-
-    struct buffer_head *bh_sb;
-    struct buffer_head *bh_b;
-
-    struct soafs_sb_info *sbi;
-
-    /* Recupero le informazioni FS specific */
-    sbi = (struct soafs_sb_info *)sb_global->s_fs_info;
-
-    /* Recupero il puntatore al superblocco del dispositivo che contiene l'indice del blocco in testa alla Sorted List */
-    bh_sb = get_sb_block();
-
-    if(bh_sb == NULL)
-    {
-        printk("%s: [ERRORE SCANSIONE SORTED LIST] Errore lettura del superblocco\n", MOD_NAME);
-        return;
-    }
-
-    b_data_sb = (struct soafs_super_block *)bh_sb->b_data;
-
-    if(b_data_sb == NULL)
-    {
-        printk("%s: [ERRORE SCANSIONE SORTED LIST] Errore puntatore a NULL per il superblocco\n", MOD_NAME);
-        return;
-    }
-
-    /* Recupero l'indice del blocco in testa alla Sorted List che è contenuto nel superblocco del dispositivo */
-    curr_index = b_data_sb->head_sorted_list;
-
-    /* Recupero il puntatore al blocco del dispositivo che rappresenta la testa della Sorted List */
-    bh_b = get_block(curr_index);
-
-    if(bh_b == NULL)
-    {
-        printk("%s: [ERRORE SCANSIONE SORTED LIST] Errore nel recupero del blocco in testa alla lista\n", MOD_NAME);
-
-        if(bh_sb != NULL)
-            brelse(bh_sb);
-
-        return;
-    }
-
-    b_data = (struct soafs_block *)bh_b -> b_data;
-
-    if(b_data == NULL)
-    {
-        printk("%s: [ERRORE SCANSIONE SORTED LIST] Errore puntatore a NULL per il blocco in testa alla lista\n", MOD_NAME);
-        return;
-    }
-
-    printk("---------------------------------------- INIZIO ELEMENTI DELLA SORTED LIST --------------------------------------\n");
-
-    printk("%lld\n", curr_index);
-
-    /* Eseguo la scansione di tutti i blocchi all'interno della Sorted List. Itero fino a quando non è l'ultimo item */
-
-    while(b_data->next != sbi->num_block)
-    {
-        curr_index = b_data->next;
-
-        printk("%lld\n", curr_index);
-
-        if(bh_b != NULL)
-            brelse(bh_b);
-
-        bh_b = get_block(curr_index);
-
-        if(bh_b == NULL)
-        {
-            printk("%s: [SCANSIONE] Errore nella lettura del blocco %lld durante la scansione della Sorted List\n", MOD_NAME, curr_index);
-
-            if(bh_sb != NULL)
-                brelse(bh_sb);
-            
-            return;
-        }
-
-        b_data = (struct soafs_block *)bh_b -> b_data;
-    }
-
-    printk("--------------------------------------------------------------------------------------------------------------\n\n");
-
-    if(bh_b != NULL)
-        brelse(bh_b);
-
-    if(bh_sb != NULL)
-        brelse(bh_sb);
-
-    return;
 }
 
 
@@ -484,6 +376,22 @@ retry_put_data_while:
         }
 
         b_data = (struct soafs_block *)bh_b -> b_data;
+
+        if(b_data == NULL)
+        {
+            if(bh_x != NULL)
+                brelse(bh_x);
+        
+            if(bh_sb != NULL)
+                brelse(bh_sb);
+
+            if(bh_b != NULL)
+                brelse(bh_b);
+
+            __sync_fetch_and_sub(&sync_var,1);
+            wake_up_interruptible(&the_queue);
+            return 1;
+        }
     }
 
     /* Gestisco la concorrenza con eventuali altri inserimenti in coda nella Sorted List */
@@ -967,7 +875,7 @@ retry_invalidate:
 
     if(ret == 2)
     {
-        printk("%s: [ERRORE INVALIDATE DATA] Errore Errore nella lettura dalla bitmask per il blocco %lld\n", MOD_NAME, index);
+        printk("%s: [ERRORE INVALIDATE DATA] Errore nella lettura dalla bitmask per il blocco %lld\n", MOD_NAME, index);
         __atomic_exchange_n (&(sync_var), 0X0000000000000000, __ATOMIC_SEQ_CST);
         mutex_unlock(&invalidate_mutex);
         wake_up_interruptible(&the_queue);
@@ -1021,8 +929,6 @@ retry_invalidate:
 
     /* Modifico il suo stato di validità all'interno della bitmask */
     __sync_fetch_and_xor(&(block_state[array_entry]), shift_base);
-    
-    //set_bitmask(index,0);
 
     updated_epoch_sorted = (gp->next_epoch_index_sorted) ? MASK : 0;
 

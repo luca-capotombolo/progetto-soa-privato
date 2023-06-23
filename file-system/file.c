@@ -263,11 +263,15 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
 
     *off = 1;
 
+    /* Potrei essere arrivato precedentemente alla fine della lista */
+
     if(bh_sb != NULL)
         brelse(bh_sb);
 
     if(bh_b != NULL)
         brelse(bh_b);
+
+    kfree(msg_to_copy);
 
     wake_up_umount();
 
@@ -296,7 +300,7 @@ int onefilefs_open(struct inode *inode, struct file *file) {
         return -ENODEV;
     }
 
-    printk("%s: Il dispositivo è stato aperto\n", MOD_NAME);
+    //printk("%s: Il dispositivo è stato aperto\n", MOD_NAME);
 
     wake_up_umount();
 
@@ -325,7 +329,7 @@ int onefilefs_release(struct inode *inode, struct file *file) {
         return -ENODEV;
     }
 
-    printk("%s: Il dispositivo è stato chiuso\n", MOD_NAME);
+    //printk("%s: Il dispositivo è stato chiuso\n", MOD_NAME);
 
     wake_up_umount();
 

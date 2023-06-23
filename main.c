@@ -464,7 +464,7 @@ asmlinkage int sys_invalidate_data(uint64_t offset){
 
     if(!is_mounted)
     {
-        LOG_DEV_ERR("GET_DATA", "get_data");
+        LOG_DEV_ERR("INVALIDATE DATA", "invalidate_data");
         return -ENODEV;
     }
     
@@ -475,7 +475,7 @@ asmlinkage int sys_invalidate_data(uint64_t offset){
     if(stop)
     {
         wake_up_umount();
-        LOG_DEV_ERR("GET_DATA", "get_data");
+        LOG_DEV_ERR("INVALIDATE DATA", "invalidate_data");
         return -ENODEV;
     }
 
