@@ -586,7 +586,10 @@ static struct result_inval * remove_data_block(uint64_t index)
     if(b_data_sb == NULL)
     {
         printk("%s: [ERRORE INVALIDATE DATA] Errore puntatore a NULL per il superblocco del device\n", MOD_NAME);
-        brelse(bh_sb);
+
+        if(bh_sb != NULL)
+            brelse(bh_sb);
+
         res_inval->code = 2;
         res_inval->bh = NULL;
         return res_inval;
@@ -598,7 +601,10 @@ static struct result_inval * remove_data_block(uint64_t index)
     if(b_data_sb->head_sorted_list == sbi->num_block)
     {
         printk("%s: [ERRORE INVALIDATE DATA] La Sorted List risulta vuota ma non può essere vuota\n", MOD_NAME);
-        brelse(bh_sb);
+
+        if(bh_sb != NULL)
+            brelse(bh_sb);
+        
         res_inval->code = 3;
         res_inval->bh = NULL;
         return res_inval;
@@ -611,7 +617,10 @@ static struct result_inval * remove_data_block(uint64_t index)
     if(bh_block == NULL)
     {
         printk("%s: [ERRORE INVALIDATE DATA] Errore nella lettura del blocco in testa alla Sorted List\n", MOD_NAME);
-        brelse(bh_sb);
+
+        if(bh_sb != NULL)
+            brelse(bh_sb);
+        
         res_inval->code = 2;
         res_inval->bh = NULL;
         return res_inval;
@@ -622,8 +631,13 @@ static struct result_inval * remove_data_block(uint64_t index)
     if(b_data_block == NULL)
     {
         printk("%s: [ERRORE INVALIDATE DATA] Errore puntatore a NULL per il superblocco del device\n", MOD_NAME);
-        brelse(bh_sb);
-        brelse(bh_block);
+
+        if(bh_sb != NULL)
+            brelse(bh_sb);
+        
+        if(bh_block != NULL)        
+            brelse(bh_block);
+        
         res_inval->code = 2;
         res_inval->bh = NULL;
         return res_inval;
@@ -643,16 +657,27 @@ static struct result_inval * remove_data_block(uint64_t index)
 
         if(!ret)
         {
-            brelse(bh_sb);
-            brelse(bh_block);
+            if(bh_sb != NULL)
+                brelse(bh_sb);
+
+            if(bh_block != NULL)
+                brelse(bh_block);
+            
             res_inval->code = 3;
             res_inval->bh = NULL;
             return res_inval;
         }
 
-        mark_buffer_dirty(bh_sb);
+        if(bh_sb != NULL)
+        {
+            mark_buffer_dirty(bh_sb);
 
-        brelse(bh_sb);
+#ifdef SYNC
+            sync_dirty_buffer(bh_sb);
+#endif
+
+            brelse(bh_sb);
+        }
 
         res_inval->code = 0;
 
@@ -676,15 +701,17 @@ static struct result_inval * remove_data_block(uint64_t index)
 
     while(curr_index != sbi->num_block)
     {
-
-        brelse(bh_block);
+        if(bh_block != NULL)
+            brelse(bh_block);
     
         /* Prendo il riferimento al blocco del dispositivo su cui correntemente sto iterando */
         bh_block = get_block(curr_index);
 
         if(bh_block == NULL)
         {
-            brelse(bh_sb);
+            if(bh_sb != NULL)
+                brelse(bh_sb);
+            
             res_inval->code = 2;
             res_inval->bh = NULL;
             return res_inval;
@@ -711,8 +738,13 @@ static struct result_inval * remove_data_block(uint64_t index)
     if(curr_index == sbi->num_block)
     {
         printk("%s: [ERRORE INVALIDATE DATA] La Sorted List è stata attraversata totalmente senza trovare il blocco\n", MOD_NAME);
-        brelse(bh_sb);
-        brelse(bh_block);
+        
+        if(bh_sb != NULL)
+            brelse(bh_sb);
+        
+        if(bh_block != NULL)        
+            brelse(bh_block);
+        
         res_inval->code = 3;
         res_inval->bh = NULL;
         return res_inval;
@@ -728,8 +760,13 @@ static struct result_inval * remove_data_block(uint64_t index)
     if(bh_block_prev == NULL)
     {
         printk("%s: [ERRORE INVALIDATE DATA] Errore nella lettura del blocco predecessore con indice %lld\n", MOD_NAME, prev_index);
-        brelse(bh_sb);
-        brelse(bh_block);
+
+        if(bh_sb != NULL)
+            brelse(bh_sb);
+        
+        if(bh_block != NULL)    
+            brelse(bh_block);
+        
         res_inval->code = 2;
         res_inval->bh = NULL;
         return res_inval;
@@ -743,19 +780,30 @@ static struct result_inval * remove_data_block(uint64_t index)
     if(!ret)
     {
         printk("%s: [ERRORE INVALIDATE DATA] Errore nella compare and swap per la modifica del predecessore\n", MOD_NAME);
-        brelse(bh_sb);
-        brelse(bh_block);
-        brelse(bh_block_prev);
+
+        if(bh_sb != NULL)
+            brelse(bh_sb);
+
+        if(bh_block != NULL)
+            brelse(bh_block);
+        
+        if(bh_block_prev != NULL)
+            brelse(bh_block_prev);
+        
         res_inval->code = 3;
         res_inval->bh = NULL;
         return res_inval;
      }
 
-    mark_buffer_dirty(bh_block_prev);
+    if(bh_block_prev != NULL)
+    {
+        mark_buffer_dirty(bh_block_prev);
 
-    brelse(bh_block_prev);
-    
-    brelse(bh_sb);
+        brelse(bh_block_prev);
+    }
+
+    if(bh_sb != NULL)
+        brelse(bh_sb);
 
     res_inval->code = 0;
 
@@ -787,15 +835,25 @@ static struct result_inval * remove_data_block(uint64_t index)
 int invalidate_data_block(uint64_t index)
 {
     int n;
+    int ret;
     int code;
+    int bits;
     int index_sorted;
+    int array_entry;
+    int bitmask_entry;
+
+    uint64_t base;
+    uint64_t offset;
+    uint64_t shift_base;
     uint64_t num_insert;
+    uint64_t *block_state;
 
     unsigned long last_epoch_sorted;
     unsigned long updated_epoch_sorted;
     unsigned long grace_period_threads_sorted;
 
     struct block_free *bf;
+    struct buffer_head *bh;
     struct soafs_sb_info *sbi;
     struct result_inval *res_inval;
 
@@ -866,6 +924,34 @@ retry_invalidate:
     /* Termino la sezione critica */
     mutex_unlock(&inval_insert_mutex);
 
+    bits = sizeof(uint64_t) * 8;    
+
+    /* Determino il blocco di stato che contiene l'informazione relativa al blocco richiesto */
+    bitmask_entry = index / (SOAFS_BLOCK_SIZE << 3);
+
+    bh = sb_bread(sb_global, 2 + bitmask_entry);
+    
+    if(bh == NULL)
+    {
+        printk("%s: [ERRORE INVALIDATE DATA] Errore nella lettura del blocco di stato dal dispositivo\n", MOD_NAME);
+        __atomic_exchange_n (&(sync_var), 0X0000000000000000, __ATOMIC_SEQ_CST);
+        mutex_unlock(&invalidate_mutex);
+        wake_up_interruptible(&the_queue);
+        return 2;
+    }
+
+    block_state = (uint64_t *)bh->b_data;    
+
+    /* Determino la entry dell'array */
+    array_entry = (index  % (SOAFS_BLOCK_SIZE << 3)) / bits;
+
+    /* Determino l'offset nella entry dell'array */
+    offset = index % bits;
+    
+    base = 1;
+
+    shift_base = base << offset;
+
     /* 
      * Arrivato a questo punto, sono l'unico thread in esecuzione che può effettivamente modificare
      * lo stato del dispositivo. Poiché sono arrivato fino a questo punto, il controllo sul bit di
@@ -877,11 +963,30 @@ retry_invalidate:
      * ancora valido allora posso procedere con l'invalidazione effettiva del blocco.
      */
 
-    if(!check_bit(index))
+    ret = check_bit(index);
+
+    if(ret == 2)
+    {
+        printk("%s: [ERRORE INVALIDATE DATA] Errore Errore nella lettura dalla bitmask per il blocco %lld\n", MOD_NAME, index);
+        __atomic_exchange_n (&(sync_var), 0X0000000000000000, __ATOMIC_SEQ_CST);
+        mutex_unlock(&invalidate_mutex);
+        wake_up_interruptible(&the_queue);
+
+        if(bh != NULL)
+            brelse(bh);
+
+        return 2;
+    }
+
+    if(!ret)
     {
         __atomic_exchange_n (&(sync_var), 0X0000000000000000, __ATOMIC_SEQ_CST);
         mutex_unlock(&invalidate_mutex);
         wake_up_interruptible(&the_queue);
+
+        if(bh != NULL)
+            brelse(bh);
+
         return 1;
     }
 
@@ -893,6 +998,10 @@ retry_invalidate:
         __atomic_exchange_n (&(sync_var), 0X0000000000000000, __ATOMIC_SEQ_CST);
         mutex_unlock(&invalidate_mutex);
         wake_up_interruptible(&the_queue);
+
+        if(bh != NULL)
+            brelse(bh);
+
         return 2;
     }
 
@@ -903,11 +1012,17 @@ retry_invalidate:
         wake_up_interruptible(&the_queue);
         code = res_inval->code;
         kfree(res_inval);
+
+        if(bh != NULL)
+            brelse(bh);
+
         return code;
     }
 
     /* Modifico il suo stato di validità all'interno della bitmask */
-    set_bitmask(index,0);
+    __sync_fetch_and_xor(&(block_state[array_entry]), shift_base);
+    
+    //set_bitmask(index,0);
 
     updated_epoch_sorted = (gp->next_epoch_index_sorted) ? MASK : 0;
 
@@ -927,7 +1042,7 @@ sleep_again:
 
     if(gp->standing_sorted[index_sorted] < grace_period_threads_sorted)
     {
-        printk("%s: [ERRORE INVALIDATE DATA] Il thread invalidate va nuovamente a dormire per l'invalidazione del blocco %lld\n", MOD_NAME, index);
+        printk("%s: [INVALIDATE DATA] Il thread invalidate va nuovamente a dormire per l'invalidazione del blocco %lld\n", MOD_NAME, index);
         goto sleep_again;
     }
 
@@ -972,6 +1087,9 @@ retry_kmalloc_invalidate_block:
     code = res_inval->code;
 
     kfree(res_inval);
+
+    if(bh != NULL)
+        brelse(bh);
 
     return code;
 }
@@ -1162,8 +1280,14 @@ int check_bit(uint64_t index)
         printk("%s: [CHECK BIT BITMASK] Il blocco di dati ad offset %lld è valido.\n", MOD_NAME, index);
 #endif
 
+        if(bh != NULL)
+            brelse(bh);
+
         return 1;
     }
+
+    if(bh != NULL)
+        brelse(bh);
 
 #ifdef NOT_CRITICAL_INIT
     printk("%s: [CHECK BIT BITMASK] Il blocco di dati ad offset %lld non è valido.\n", MOD_NAME, index);
@@ -1529,6 +1653,9 @@ int set_bitmask(uint64_t index, int mode)
     {
         __sync_fetch_and_xor(&(block_state[array_entry]), shift_base);
     }
+
+    if(bh != NULL)
+        brelse(bh);
 
     return 0;  
 

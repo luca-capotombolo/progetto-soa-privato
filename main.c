@@ -11,7 +11,6 @@
 #include <linux/string.h>           /* strncpy() */
 #include "./headers/main_header.h"
 
-#define SYNC
 
 
 MODULE_LICENSE(LICENSE);
@@ -85,6 +84,7 @@ __SYSCALL_DEFINEx(3, _get_data, uint64_t, offset, char *, destination, size_t, s
 #else
 asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
 #endif
+    int ret;
     int index;
     size_t byte_ret;
     size_t byte_copy; 
@@ -126,12 +126,24 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
     }
 
     my_epoch = __sync_fetch_and_add(&(gp->epoch_sorted),1);
+
+    ret = check_bit(offset);
+
+    if(ret == 2)
+    {
+        printk("%s: [ERRORE GET DATA] Errore nella lettura dalla bitmask per il blocco %lld\n", MOD_NAME, offset);
+        index = (my_epoch & MASK) ? 1 : 0;
+        __sync_fetch_and_add(&(gp->standing_sorted[index]),1);
+        wake_up_interruptible(&the_queue);
+        wake_up_umount();
+        return -EIO;
+    }
    
     /*
      * Verifico se il blocco da leggere che è stato richiesto dall'utente è valido oppure è libero.
      * Se il blocco è libero, allora la system call termina immediatamente con un errore.
      */
-    if(!check_bit(offset))
+    if(!ret)
     {
 
 #ifdef NOT_CRITICAL_BUT_GET
@@ -164,7 +176,10 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
     if(b == NULL)
     {
         printk("%s: [ERRORE GET DATA] Errore nella recupero del contenuto del blocco %lld dal dispositivo\n", MOD_NAME, offset);
-        brelse(bh);
+
+        if(bh != NULL)
+            brelse(bh);
+
         index = (my_epoch & MASK) ? 1 : 0;
         __sync_fetch_and_add(&(gp->standing_sorted[index]),1);
         wake_up_interruptible(&the_queue);
@@ -172,6 +187,7 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
         return -EIO;
     }
 
+    /* Recupero la dimensione del messaggio valido contenuto all'interno del blocco richiesto */
     dim = b->dim;
 
     /* Determino quanti bytes devono effettivamente essere copiati per l'utente */
@@ -183,7 +199,8 @@ asmlinkage int sys_get_data(uint64_t offset, char * destination, size_t size){
     /* Copio i dati verso l'utente */
     byte_ret = copy_to_user(destination, b->msg, byte_copy);
 
-    brelse(bh);
+    if(bh != NULL)
+        brelse(bh);
 
     index = (my_epoch & MASK) ? 1 : 0;
 
@@ -402,15 +419,15 @@ retry:
     __sync_fetch_and_or(&(block_state[array_entry]), shift_base);
 
     if(bh != NULL)
+    {
         mark_buffer_dirty(bh);
 
 #ifdef SYNC
-    if(bh != NULL)
         sync_dirty_buffer(bh);
 #endif
 
-    if(bh != NULL)
         brelse(bh);
+    }
 
     /* Dealloco l'elemento rimosso precedentemente dalla Free List */
 
@@ -462,12 +479,21 @@ asmlinkage int sys_invalidate_data(uint64_t offset){
         return -ENODEV;
     }
 
+    ret = check_bit(offset);
+
+    if(ret == 2)
+    {
+        printk("%s: [ERRORE INVALIDATE DATA] Errore nella lettura dalla bitmask per il blocco %lld\n", MOD_NAME, offset);
+        wake_up_umount();
+        return -EIO;
+    }
+
     /*
      * Verifico la validità del blocco richiesto dall'utente. Se il blocco è
      * già non valido allora la system call termina immediatamente con un codice
      * di errore.
      */
-    if(!check_bit(offset))
+    if(!ret)
     {
 
 #ifdef NOT_CRITICAL_INVAL

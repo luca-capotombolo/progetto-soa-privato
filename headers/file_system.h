@@ -41,6 +41,8 @@
 /* Numero massimo di blocchi liberi con cui inizializzo la free_block_list */
 #define SIZE_INIT 10
 
+#define SYNC
+
 
 
 /**

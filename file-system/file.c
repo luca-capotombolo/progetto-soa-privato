@@ -381,7 +381,8 @@ struct dentry *onefilefs_lookup(struct inode *parent_inode, struct dentry *child
 
 	    the_inode->i_size = FS_specific_inode->file_size;
 
-        brelse(bh);
+        if(bh != NULL)
+            brelse(bh);
 
         /* Associo la dentry 'child_dentry' con l'inode 'the_inode'. */
         d_add(child_dentry, the_inode);

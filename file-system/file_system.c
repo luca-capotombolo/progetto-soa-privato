@@ -128,8 +128,10 @@ static int set_free_block(void)
     if(free_blocks == NULL)
     {
         printk("%s: [ERRORE SMONTAGGIO - SET FREE BLOCK] Errore nell'allocazione dell'array 'free_blocks'\n", MOD_NAME);
+
         if(bh != NULL)
             brelse(bh);
+
         return 1;
     }
 
@@ -249,16 +251,19 @@ static int flush_bitmask(void)
             return 1;
         }
 
-        mark_buffer_dirty(bh);
+        if(bh != NULL)
+        {
+            mark_buffer_dirty(bh);
 
-        sync_dirty_buffer(bh);
+            sync_dirty_buffer(bh);
+
+            brelse(bh);
+        }
 
         printk("%s: [SMONTAGGIO - FLUSH BITMASK] Flush dei dati per il blocco di stato #%lld avvenuto con successo\n", MOD_NAME, counter);        
 
         counter++;
-
-        /* Rilascio la memoria al page cache */
-        brelse(bh);
+            
     }
 
     printk("%s: [SMONTAGGIO - FLUSH BITMASK] Numero dei blocchi di stato flushati correttamente: %lld/%lld\n", MOD_NAME, counter, num_block_state);
@@ -491,7 +496,10 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     if( (sb_disk->num_block > NBLOCKS) || ((sb_disk->num_block - sb_disk->num_block_state - 2) <= 0) )
     {
         printk("%s: [ERRORE MONTAGGIO] Il numero dei blocchi del dispositivo non è valido\n", MOD_NAME);
-        brelse(bh);
+
+        if(bh != NULL)
+            brelse(bh);
+        
         is_free = 1;
         return -EINVAL;
     }
@@ -500,7 +508,10 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     if(sb_disk->magic != SOAFS_MAGIC_NUMBER)
     {
         printk("%s: [ERRORE MONTAGGIO] Mancata corrispondenza tra i due magic number\n", MOD_NAME);
-        brelse(bh);
+
+        if(bh != NULL)
+            brelse(bh);
+
         is_free = 1;
 	    return -EBADF;
     }
@@ -515,7 +526,10 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     if(sbi == NULL)
     {
         printk("%s: [ERRORE MONTAGGIO] Errore esecuzione kzalloc() nell'allocazione della struttura dati FS Specific\n", MOD_NAME);
-        brelse(bh);
+
+        if(bh != NULL)
+            brelse(bh);
+        
         is_free = 1;
         return -ENOMEM;
     }
@@ -540,7 +554,10 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     if(!root_inode)
     {
         printk("%s: [ERRORE MONTAGGIO] Errore nel recupero del root inode\n", MOD_NAME);
-        brelse(bh);
+
+        if(bh != NULL)
+            brelse(bh);
+
         kfree(sbi);
         is_free = 1;
         return -ENOMEM;
@@ -568,7 +585,10 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     if (!root_dentry)
     {
         printk("%s: [ERRORE MONTAGGIO] Errore nella creazione della root directory\n", MOD_NAME);
-        brelse(bh);
+
+        if(bh != NULL)
+            brelse(bh);
+
         kfree(sbi);
         is_free = 1;
         return -ENOMEM;
@@ -588,7 +608,10 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     if(ret)
     {
         printk("%s: [ERRORE MONTAGGIO] Errore nella inizializzazione delle strutture dati core del modulo\n", MOD_NAME);
-        brelse(bh);
+
+        if(bh != NULL)
+            brelse(bh);
+
         kfree(sbi);
         is_free = 1;
         return -EIO;
@@ -609,7 +632,10 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
     if(ret)
     {
         printk("%s: [ERRORE MONTAGGIO] Errore nella creazione del thread demone\n", MOD_NAME);
-        brelse(bh);
+
+        if(bh != NULL)
+            brelse(bh);
+
         free_all_memory();
         kfree(sbi);
          __sync_fetch_and_sub(&kernel_thread_ok,1);
@@ -620,7 +646,9 @@ static int soafs_fill_super(struct super_block *sb, void *data, int silent) {
 exit_mount:
 
     /* Rilascio del superblocco */
-    brelse(bh);
+
+    if(bh != NULL)
+        brelse(bh);
 
     return 0;
 }
