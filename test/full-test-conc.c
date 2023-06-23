@@ -52,7 +52,7 @@ int get_data(uint64_t offset)
 
     memset(msg, 0, MSG_SIZE);
 
-    ret = syscall(156, offset, msg, MSG_SIZE);
+    ret = syscall(134, offset, msg, MSG_SIZE);
     
     return ret;
 
@@ -68,7 +68,7 @@ int invalidate_data(uint64_t offset)
 {
     int ret;
 
-    ret = syscall(177,offset);
+    ret = syscall(174,offset);
 
     return ret;
 }
@@ -85,7 +85,7 @@ uint64_t put_data(const char *msg)
 
     uint64_t ret;
 
-    ret = syscall(174, msg, strlen(msg));
+    ret = syscall(156, msg, strlen(msg));
 
     return ret;
 }

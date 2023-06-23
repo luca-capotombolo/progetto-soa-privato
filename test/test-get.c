@@ -22,7 +22,7 @@ int get_data(char *msg, size_t size, uint64_t offset)
 {
     int ret;
 
-    ret = syscall(156,offset, msg, size);
+    ret = syscall(134,offset, msg, size);
 
     return ret;
 

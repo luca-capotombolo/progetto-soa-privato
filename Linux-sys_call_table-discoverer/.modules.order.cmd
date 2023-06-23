@@ -1,0 +1,1 @@
+cmd_/home/cap/Scrivania/progetto-soa/privato/progetto-soa-privato/Linux-sys_call_table-discoverer/modules.order := {   echo /home/cap/Scrivania/progetto-soa/privato/progetto-soa-privato/Linux-sys_call_table-discoverer/the_usctm.ko; :; } | awk '!x[$$0]++' - > /home/cap/Scrivania/progetto-soa/privato/progetto-soa-privato/Linux-sys_call_table-discoverer/modules.order

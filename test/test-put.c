@@ -16,7 +16,7 @@ uint64_t put_data(const char *msg)
 
     uint64_t ret;
 
-    ret = syscall(174, msg, strlen(msg) + 1);
+    ret = syscall(156, msg, strlen(msg) + 1);
 
     printf("[PUT DATA] Valore di ritorno della system call: %ld\n", ret);
 

@@ -16,7 +16,7 @@ int invalidate_data(uint64_t offset)
 {
     int ret;
 
-    ret = syscall(177,offset);
+    ret = syscall(174,offset);
 
     return ret;
 }

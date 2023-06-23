@@ -165,87 +165,6 @@ void syscall_table_finder(void){
 int free_entries[MAX_FREE];
 module_param_array(free_entries,int,NULL,0660);//default array size already known - here we expose what entries are free
 
-static int f(struct vfsmount *mnt, void *arg)
-{
-    printk("dentro a f.\n");
-    printk("%s\n", mnt->mnt_sb->s_root->d_name.name);
-    if(strcmp(mnt->mnt_sb->s_type->name, "soafs")==0)
-        return 1;
-    printk("Sono uscito da f\n");
-    return 0;
-}
-
-#define SYS_CALL_INSTALL
-
-#ifdef SYS_CALL_INSTALL
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
-__SYSCALL_DEFINEx(2, _trial, unsigned long, A, unsigned long, B){
-#else
-asmlinkage long sys_trial(unsigned long A, unsigned long B){
-#endif
-
-    struct fs_struct *fs;
-    struct path *root;
-    struct vfsmount *root_vfsmount;
-    int ret;
-
-    printk("%s: thread %d requests a trial sys_call with %lu and %lu as parameters\n",MODNAME,current->pid,A,B);    
-
-    fs = current->fs;
-
-    printk("Ottengo il campo fs_struct.\n");
-
-    ret = iterate_mounts(f, NULL, fs->root.mnt);
-
-    printk("Fine iterate_mounts\n");
-
-    if(ret==1)
-    {
-        printk("Esiste una istanza di montaggio.\n");
-    }
-    else
-    {
-        printk("Non esiste alcuna istanza di montaggio");
-    }
-
-    return 0;
-
-}
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
-static unsigned long sys_trial = (unsigned long) __x64_sys_trial;	
-#else
-#endif
-
-unsigned long cr0;
-
-static inline void
-write_cr0_forced(unsigned long val)
-{
-    unsigned long __force_order;
-
-    /* __asm__ __volatile__( */
-    asm volatile(
-        "mov %0, %%cr0"
-        : "+r"(val), "+m"(__force_order));
-}
-
-static inline void
-protect_memory(void)
-{
-    write_cr0_forced(cr0);
-}
-
-static inline void
-unprotect_memory(void)
-{
-    write_cr0_forced(cr0 & ~X86_CR0_WP);
-}
-
-#else
-#endif
-
-
 
 int init_module(void) {
 	
@@ -268,15 +187,6 @@ int init_module(void) {
 			if(j>=MAX_FREE) break;
 		}
 
-#ifdef SYS_CALL_INSTALL
-	cr0 = read_cr0();
-        unprotect_memory();
-        hacked_syscall_tbl[FIRST_NI_SYSCALL] = (unsigned long*)sys_trial;
-        protect_memory();
-	printk("%s: a sys_call with 2 parameters has been installed as a trial on the sys_call_table at displacement %d\n",MODNAME,FIRST_NI_SYSCALL);	
-#else
-#endif
-
         printk("%s: module correctly mounted\n",MODNAME);
 
         return 0;
@@ -285,13 +195,6 @@ int init_module(void) {
 
 void cleanup_module(void) {
                 
-#ifdef SYS_CALL_INSTALL
-	cr0 = read_cr0();
-        unprotect_memory();
-        hacked_syscall_tbl[FIRST_NI_SYSCALL] = (unsigned long*)hacked_ni_syscall;
-        protect_memory();
-#else
-#endif
         printk("%s: shutting down\n",MODNAME);
         
 }

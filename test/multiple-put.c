@@ -33,7 +33,7 @@ uint64_t put_data(const char *msg)
 
     uint64_t ret;
 
-    ret = syscall(174, msg, strlen(msg));
+    ret = syscall(156, msg, strlen(msg));
 
     return ret;
 }
