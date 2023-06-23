@@ -70,7 +70,7 @@ void read_file(char *path)
         return;
     }
 
-    ret = read(fd, (void *)msg_read, 4000);
+    ret = read(fd, (void *)msg_read, 400);
 
     if(ret==-1)
     {
